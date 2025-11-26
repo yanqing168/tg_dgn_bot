@@ -115,7 +115,7 @@ async def test_create_order_no_suffix_available(mock_suffix_manager, payment_pro
 async def test_save_and_get_order(payment_processor, sample_order):
     """测试保存和获取订单"""
     # 模拟Redis操作
-    order_data = sample_order.dict()
+    order_data = sample_order.model_dump()
     order_data["created_at"] = sample_order.created_at.isoformat()
     order_data["updated_at"] = sample_order.updated_at.isoformat()
     order_data["expires_at"] = sample_order.expires_at.isoformat()
@@ -143,7 +143,7 @@ async def test_find_order_by_amount(payment_processor, sample_order):
     payment_processor.redis_client.get.return_value = sample_order.order_id
     
     # 模拟获取订单详情
-    order_data = sample_order.dict()
+    order_data = sample_order.model_dump()
     order_data["created_at"] = sample_order.created_at.isoformat()
     order_data["updated_at"] = sample_order.updated_at.isoformat()
     order_data["expires_at"] = sample_order.expires_at.isoformat()

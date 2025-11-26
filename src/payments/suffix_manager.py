@@ -9,6 +9,7 @@ import redis.asyncio as redis
 from datetime import datetime, timedelta
 
 from ..config import settings
+from src.common.settings_service import get_order_timeout_minutes
 
 
 class SuffixManager:
@@ -99,7 +100,7 @@ class SuffixManager:
             是否成功预留
         """
         key = f"suffix:{suffix}"
-        timeout_minutes = settings.order_timeout_minutes
+        timeout_minutes = get_order_timeout_minutes()
         
         # 使用SET NX EX命令实现原子性预留
         result = await self.redis_client.set(
@@ -190,7 +191,7 @@ class SuffixManager:
         await self.connect()
         
         key = f"suffix:{suffix}"
-        timeout_minutes = settings.order_timeout_minutes
+        timeout_minutes = get_order_timeout_minutes()
         
         # 使用Lua脚本确保原子性：只有当值匹配时才延长
         lua_script = """

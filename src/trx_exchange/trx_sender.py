@@ -4,7 +4,8 @@ import logging
 from decimal import Decimal
 from typing import Optional
 
-from ..config import settings
+from .config import TRXExchangeConfig
+from ..config import settings  # Needed for tests that patch module-level settings
 
 logger = logging.getLogger(__name__)
 
@@ -16,11 +17,34 @@ class TRXSender:
     In production, configure real private key and enable transfer.
     """
 
-    def __init__(self):
+    def __init__(self, config: Optional[TRXExchangeConfig] = None):
         """Initialize TRX sender."""
-        self.test_mode = settings.trx_exchange_test_mode
-        self.sender_address = settings.trx_exchange_send_address
-        self.private_key = settings.trx_exchange_private_key
+        if config is not None:
+            self.config = config
+        else:
+            # Build config snapshot using module-level settings (patchable in tests)
+            def _as_str(attr: str, default: str = "") -> str:
+                value = getattr(settings, attr, default)
+                return str(value) if value is not None else default
+
+            def _as_decimal(attr: str, default: Decimal = Decimal("0")) -> Decimal:
+                value = getattr(settings, attr, default)
+                try:
+                    return Decimal(str(value))
+                except Exception:
+                    return default
+
+            self.config = TRXExchangeConfig(
+                receive_address=_as_str("trx_exchange_receive_address"),
+                send_address=_as_str("trx_exchange_send_address"),
+                private_key=_as_str("trx_exchange_private_key"),
+                qrcode_file_id=_as_str("trx_exchange_qrcode_file_id"),
+                default_rate=_as_decimal("trx_exchange_default_rate"),
+                test_mode=bool(getattr(settings, "trx_exchange_test_mode", True)),
+            )
+        self.test_mode = self.config.test_mode
+        self.sender_address = self.config.send_address
+        self.private_key = self.config.private_key
 
         if self.test_mode:
             logger.info("TRXSender initialized in TEST MODE (no real transfers)")

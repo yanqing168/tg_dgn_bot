@@ -4,7 +4,7 @@
 from datetime import datetime, timedelta
 from enum import Enum
 from typing import Optional, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 import uuid
 
 
@@ -60,8 +60,7 @@ class Order(BaseModel):
         self.status = new_status
         self.updated_at = datetime.now()
     
-    class Config:
-        use_enum_values = True
+    model_config = ConfigDict(use_enum_values=True)
 
 
 class PaymentCallback(BaseModel):

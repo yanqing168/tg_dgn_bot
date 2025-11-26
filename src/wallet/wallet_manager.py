@@ -4,11 +4,16 @@
 """
 from typing import Optional, Tuple
 from datetime import datetime, timedelta
+import logging
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
 import uuid
 
 from ..database import User, DepositOrder, DebitRecord, get_db, close_db
+from src.common.settings_service import get_order_timeout_minutes
+
+
+logger = logging.getLogger(__name__)
 
 
 class WalletManager:
@@ -84,7 +89,7 @@ class WalletManager:
         user_id: int,
         base_amount: float,
         unique_suffix: int,
-        timeout_minutes: int = 30
+        timeout_minutes: Optional[int] = None
     ) -> DepositOrder:
         """创建充值订单
         
@@ -106,6 +111,8 @@ class WalletManager:
         total_amount = base_amount + unique_suffix / 1000
         amount_micro_usdt = int(total_amount * 1_000_000)
         
+        effective_timeout = timeout_minutes or get_order_timeout_minutes()
+
         # 创建订单
         order = DepositOrder(
             order_id=str(uuid.uuid4()),
@@ -116,13 +123,20 @@ class WalletManager:
             amount_micro_usdt=amount_micro_usdt,
             status="PENDING",
             created_at=datetime.now(),
-            expires_at=datetime.now() + timedelta(minutes=timeout_minutes)
+            expires_at=datetime.now() + timedelta(minutes=effective_timeout)
         )
         
         db.add(order)
         db.commit()
         db.refresh(order)
-        
+
+        logger.info(
+            "创建充值订单 %s（用户=%s），超时时间 %s 分钟",
+            order.order_id,
+            user_id,
+            effective_timeout,
+        )
+
         return order
     
     def process_deposit_callback(
@@ -193,6 +207,8 @@ class WalletManager:
     ) -> bool:
         """扣费（余额不足则拒绝）
         
+        M5 安全加固：使用事务确保扣费和流水记录原子性
+        
         Args:
             user_id: 用户ID
             amount: 扣费金额（USDT）
@@ -204,34 +220,42 @@ class WalletManager:
         """
         db = self._get_db()
         
-        # 获取用户（加锁防止并发）
-        user = db.query(User).filter(User.user_id == user_id).with_for_update().first()
-        
-        if not user:
+        try:
+            # 获取用户（加锁防止并发）
+            user = db.query(User).filter(User.user_id == user_id).with_for_update().first()
+            
+            if not user:
+                return False
+            
+            # 计算微USDT金额
+            amount_micro_usdt = int(amount * 1_000_000)
+            
+            # 检查余额
+            if user.balance_micro_usdt < amount_micro_usdt:
+                return False
+            
+            # 扣费
+            user.balance_micro_usdt -= amount_micro_usdt
+            user.updated_at = datetime.now()
+            
+            # 记录扣费（与扣费在同一事务中）
+            record = DebitRecord(
+                user_id=user_id,
+                amount_micro_usdt=amount_micro_usdt,
+                order_type=order_type,
+                related_order_id=related_order_id
+            )
+            db.add(record)
+            
+            # 原子提交：扣费 + 流水记录
+            db.commit()
+            return True
+            
+        except Exception as e:
+            # M5：异常时回滚，确保不会出现"扣费成功但流水失败"
+            db.rollback()
+            logger.error(f"扣费失败 user={user_id} amount={amount}: {e}")
             return False
-        
-        # 计算微USDT金额
-        amount_micro_usdt = int(amount * 1_000_000)
-        
-        # 检查余额
-        if user.balance_micro_usdt < amount_micro_usdt:
-            return False
-        
-        # 扣费
-        user.balance_micro_usdt -= amount_micro_usdt
-        user.updated_at = datetime.now()
-        
-        # 记录扣费
-        record = DebitRecord(
-            user_id=user_id,
-            amount_micro_usdt=amount_micro_usdt,
-            order_type=order_type,
-            related_order_id=related_order_id
-        )
-        db.add(record)
-        
-        db.commit()
-        return True
     
     def get_deposit_order(self, order_id: str) -> Optional[DepositOrder]:
         """查询充值订单

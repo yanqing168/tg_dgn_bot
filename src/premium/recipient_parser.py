@@ -8,9 +8,9 @@ from typing import List, Set
 class RecipientParser:
     """解析和验证 Premium 收件人"""
     
-    # 正则表达式（捕获时允许5-32字符，但解析时更宽松）
-    USERNAME_PATTERN = re.compile(r'@([a-zA-Z0-9_]{3,32})')
-    TGLINK_PATTERN = re.compile(r't\.me/([a-zA-Z0-9_]{3,32})')
+    # 正则表达式（统一为5-32字符，符合Telegram规范）
+    USERNAME_PATTERN = re.compile(r'@([a-zA-Z0-9_]{5,32})(?![a-zA-Z0-9_])')
+    TGLINK_PATTERN = re.compile(r't\.me/([a-zA-Z0-9_]{5,32})(?![a-zA-Z0-9_])')
     
     @classmethod
     def parse(cls, text: str) -> List[str]:

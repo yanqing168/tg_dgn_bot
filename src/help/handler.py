@@ -145,24 +145,26 @@ async def back_to_main_from_help(update: Update, context: ContextTypes.DEFAULT_T
     """从帮助系统返回主菜单"""
     query = update.callback_query
     await query.answer()
-    
+
     # 导入主菜单处理器
     from src.menu.main_menu import MainMenuHandler
-    
+
     # 显示主菜单
-    await MainMenuHandler.show_main_menu(query, context)
-    
+    await MainMenuHandler.show_main_menu(update, context)
+
     return ConversationHandler.END
 
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """取消帮助对话"""
-    await update.message.reply_text(
-        "✅ 已退出帮助系统。\n\n"
-        "使用 /start 返回主菜单\n"
-        "使用 /help 重新打开帮助"
-    )
-    return ConversationHandler.END
+    """取消帮助对话 - 使用统一清理机制"""
+    from src.common.navigation_manager import NavigationManager
+    
+    # 先发送取消确认
+    if update.callback_query:
+        await update.callback_query.answer("已取消")
+    
+    # 使用统一的清理和导航方法
+    return await NavigationManager.cleanup_and_show_main_menu(update, context)
 
 
 def get_help_handler() -> ConversationHandler:
@@ -187,7 +189,10 @@ def get_help_handler() -> ConversationHandler:
             ]
         },
         fallbacks=[
+            CallbackQueryHandler(back_to_main_from_help, pattern=r"^back_to_main$"),
             CommandHandler("cancel", cancel)
         ],
-        per_message=False
+        per_chat=True,
+        per_user=True,
+        per_message=False,
     )

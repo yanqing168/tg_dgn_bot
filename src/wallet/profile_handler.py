@@ -1,6 +1,7 @@
 """
 个人中心 Telegram Bot 处理器
 """
+import html
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ContextTypes,
@@ -16,6 +17,7 @@ import logging
 from ..wallet.wallet_manager import WalletManager
 from ..payments.suffix_manager import suffix_manager
 from ..config import settings
+from src.common.settings_service import get_order_timeout_minutes
 
 logger = logging.getLogger(__name__)
 
@@ -25,16 +27,30 @@ AWAITING_DEPOSIT_AMOUNT = 1
 
 class ProfileHandler:
     """个人中心处理器"""
-    
+
+    @staticmethod
+    def _build_profile_text(user, balance: float) -> str:
+        """构建个人中心主界面文本（含用户信息）"""
+        display_name = user.full_name or user.username or f"User_{user.id}"
+        safe_name = html.escape(display_name)
+        return (
+            "🏠 <b>个人中心</b>\n\n"
+            f"👤 Name: <code>{safe_name}</code>\n"
+            f"🆔 UID: <code>{user.id}</code>\n"
+            f"💰 当前余额: <code>{balance:.3f}</code> USDT\n\n"
+            "请选择操作："
+        )
+
     @staticmethod
     async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """处理 /profile 命令"""
-        user_id = update.effective_user.id
-        
+        user = update.effective_user
+        user_id = user.id
+
         # 获取余额
         with WalletManager() as wallet:
             balance = wallet.get_balance(user_id)
-        
+
         # 构建键盘
         keyboard = [
             [InlineKeyboardButton("💰 余额查询", callback_data="profile_balance")],
@@ -43,27 +59,24 @@ class ProfileHandler:
             [InlineKeyboardButton("🔙 返回主菜单", callback_data="back_to_main")],
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        text = (
-            "🏠 <b>个人中心</b>\n\n"
-            f"💰 当前余额: <code>{balance:.3f}</code> USDT\n\n"
-            "请选择操作："
-        )
-        
+
+        text = ProfileHandler._build_profile_text(user, balance)
+
         await update.message.reply_text(text, parse_mode="HTML", reply_markup=reply_markup)
-    
+
     @staticmethod
     async def profile_command_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """处理从主菜单进入个人中心的回调"""
         query = update.callback_query
         await query.answer()
-        
-        user_id = update.effective_user.id
-        
+
+        user = update.effective_user
+        user_id = user.id
+
         # 获取余额
         with WalletManager() as wallet:
             balance = wallet.get_balance(user_id)
-        
+
         # 构建键盘
         keyboard = [
             [InlineKeyboardButton("💰 余额查询", callback_data="profile_balance")],
@@ -72,15 +85,11 @@ class ProfileHandler:
             [InlineKeyboardButton("🔙 返回主菜单", callback_data="back_to_main")],
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        text = (
-            "🏠 <b>个人中心</b>\n\n"
-            f"💰 当前余额: <code>{balance:.3f}</code> USDT\n\n"
-            "请选择操作："
-        )
-        
+
+        text = ProfileHandler._build_profile_text(user, balance)
+
         await query.edit_message_text(text, parse_mode="HTML", reply_markup=reply_markup)
-    
+
     @staticmethod
     async def balance_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """查询余额"""
@@ -167,11 +176,11 @@ class ProfileHandler:
         
         # 创建充值订单
         with WalletManager() as wallet:
+            timeout_minutes = get_order_timeout_minutes()
             order = wallet.create_deposit_order(
                 user_id=user_id,
                 base_amount=amount,
                 unique_suffix=suffix,
-                timeout_minutes=settings.order_timeout_minutes
             )
         
         # 保存订单ID到后缀池
@@ -263,9 +272,15 @@ class ProfileHandler:
     
     @staticmethod
     async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """取消操作"""
-        await update.message.reply_text("操作已取消")
-        return ConversationHandler.END
+        """取消操作 - 使用统一清理机制"""
+        from src.common.navigation_manager import NavigationManager
+        
+        # 先发送取消确认
+        if update.callback_query:
+            await update.callback_query.answer("已取消")
+        
+        # 使用统一的清理和导航方法
+        return await NavigationManager.cleanup_and_show_main_menu(update, context)
 
 
 def get_profile_handlers():
@@ -284,6 +299,8 @@ def get_profile_handlers():
     
     return [
         CommandHandler("profile", ProfileHandler.profile_command),
+        # 添加Reply按钮支持
+        MessageHandler(filters.Regex(r"^👤 个人中心$"), ProfileHandler.profile_command),
         CallbackQueryHandler(ProfileHandler.balance_query, pattern="^profile_balance$"),
         deposit_conv,
         CallbackQueryHandler(ProfileHandler.deposit_history, pattern="^profile_history$"),

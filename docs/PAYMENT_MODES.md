@@ -149,8 +149,7 @@ ENERGY_FLASH_ADDRESS=TYourFlashExchangeAddr
 ### 特点
 
 - ✅ **完全免费**，无需支付
-- ✅ 限频机制：每用户 30 分钟 1 次
-
+- ✅ 限频机制：管理员可在后台配置（默认每用户 30 分钟 1 次）
 - ✅ SQLite 持久化存储
 - ✅ 重启后限频仍生效
 

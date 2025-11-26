@@ -3,31 +3,39 @@
 """
 import pytest
 from datetime import datetime, timedelta
+from unittest.mock import patch, MagicMock
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 from src.address_query.handler import AddressQueryHandler
-from src.database import SessionLocal, AddressQueryLog, init_db
+from src.database import Base, AddressQueryLog
 
 
 @pytest.fixture
 def test_db():
-    """测试数据库 fixture"""
-    # 使用内存数据库
-    import os
-    os.environ['DATABASE_URL'] = 'sqlite:///:memory:'
+    """测试数据库 fixture - 使用独立内存数据库"""
+    # 创建完全隔离的内存数据库
+    test_engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(bind=test_engine)
+    TestSessionLocal = sessionmaker(bind=test_engine)
     
-    # 重新导入以使用新的数据库 URL
-    from src.database import engine, Base
-    Base.metadata.create_all(bind=engine)
-    
-    yield
+    yield TestSessionLocal
     
     # 清理
-    Base.metadata.drop_all(bind=engine)
+    test_engine.dispose()
+
+
+@pytest.fixture
+def mock_session_local(test_db):
+    """Mock SessionLocal 使用测试数据库"""
+    with patch('src.address_query.handler.SessionLocal', test_db):
+        with patch('src.database.SessionLocal', test_db):
+            yield test_db
 
 
 class TestAddressQueryRateLimit:
     """地址查询限频测试"""
     
-    def test_first_query_allowed(self, test_db):
+    def test_first_query_allowed(self, mock_session_local):
         """测试首次查询允许"""
         user_id = 12345
         
@@ -36,7 +44,7 @@ class TestAddressQueryRateLimit:
         assert can_query is True
         assert remaining == 0
     
-    def test_query_within_limit_rejected(self, test_db):
+    def test_query_within_limit_rejected(self, mock_session_local):
         """测试限频期内查询被拒绝"""
         user_id = 12346
         
@@ -48,18 +56,18 @@ class TestAddressQueryRateLimit:
         
         assert can_query is False
         assert remaining > 0
-        assert remaining <= 30  # 应该在 30 分钟内
+        assert remaining <= 1  # 应该在 1 分钟内
     
-    def test_query_after_limit_allowed(self, test_db):
+    def test_query_after_limit_allowed(self, mock_session_local):
         """测试限频期后查询允许"""
         user_id = 12347
         
-        # 记录查询（手动设置为 31 分钟前）
-        db = SessionLocal()
+        # 记录查询（手动设置为 2 分钟前）
+        db = mock_session_local()
         try:
             log = AddressQueryLog(
                 user_id=user_id,
-                last_query_at=datetime.now() - timedelta(minutes=31),
+                last_query_at=datetime.now() - timedelta(minutes=2),
                 query_count=1
             )
             db.add(log)
@@ -73,13 +81,13 @@ class TestAddressQueryRateLimit:
         assert can_query is True
         assert remaining == 0
     
-    def test_record_query_creates_log(self, test_db):
+    def test_record_query_creates_log(self, mock_session_local):
         """测试记录查询创建日志"""
         user_id = 12348
         
         AddressQueryHandler._record_query(user_id)
         
-        db = SessionLocal()
+        db = mock_session_local()
         try:
             log = db.query(AddressQueryLog).filter_by(user_id=user_id).first()
             
@@ -90,14 +98,14 @@ class TestAddressQueryRateLimit:
         finally:
             db.close()
     
-    def test_record_query_updates_existing(self, test_db):
+    def test_record_query_updates_existing(self, mock_session_local):
         """测试记录查询更新已有记录"""
         user_id = 12349
         
         # 第一次查询
         AddressQueryHandler._record_query(user_id)
         
-        db = SessionLocal()
+        db = mock_session_local()
         try:
             log = db.query(AddressQueryLog).filter_by(user_id=user_id).first()
             first_time = log.last_query_at
@@ -105,11 +113,11 @@ class TestAddressQueryRateLimit:
         finally:
             db.close()
         
-        # 等待 31 分钟（模拟）
-        db = SessionLocal()
+        # 等待 2 分钟（模拟）
+        db = mock_session_local()
         try:
             log = db.query(AddressQueryLog).filter_by(user_id=user_id).first()
-            log.last_query_at = datetime.now() - timedelta(minutes=31)
+            log.last_query_at = datetime.now() - timedelta(minutes=2)
             db.commit()
         finally:
             db.close()
@@ -117,7 +125,7 @@ class TestAddressQueryRateLimit:
         # 第二次查询
         AddressQueryHandler._record_query(user_id)
         
-        db = SessionLocal()
+        db = mock_session_local()
         try:
             log = db.query(AddressQueryLog).filter_by(user_id=user_id).first()
             
@@ -126,7 +134,7 @@ class TestAddressQueryRateLimit:
         finally:
             db.close()
     
-    def test_persistence_after_restart(self, test_db):
+    def test_persistence_after_restart(self, mock_session_local):
         """测试重启后限频仍有效（持久化）"""
         user_id = 12350
         
@@ -140,7 +148,7 @@ class TestAddressQueryRateLimit:
         assert can_query is False
         assert remaining > 0
     
-    def test_multiple_users_independent(self, test_db):
+    def test_multiple_users_independent(self, mock_session_local):
         """测试多用户限频独立"""
         user1 = 12351
         user2 = 12352
@@ -156,7 +164,7 @@ class TestAddressQueryRateLimit:
         can_query_2, _ = AddressQueryHandler._check_rate_limit(user2)
         assert can_query_2 is True
     
-    def test_concurrent_query_protection(self, test_db):
+    def test_concurrent_query_protection(self, mock_session_local):
         """测试并发查询保护（同一用户无法绕过限频）"""
         user_id = 12353
         
@@ -171,16 +179,16 @@ class TestAddressQueryRateLimit:
         assert can_query_1 is False
         assert can_query_2 is False
     
-    def test_edge_case_exactly_30_minutes(self, test_db):
-        """测试边界情况：恰好 30 分钟"""
+    def test_edge_case_exactly_1_minute(self, mock_session_local):
+        """测试边界情况：恰好 1 分钟"""
         user_id = 12354
         
-        # 记录查询（恰好 30 分钟前）
-        db = SessionLocal()
+        # 记录查询（恰好 1 分钟前）
+        db = mock_session_local()
         try:
             log = AddressQueryLog(
                 user_id=user_id,
-                last_query_at=datetime.now() - timedelta(minutes=30),
+                last_query_at=datetime.now() - timedelta(minutes=1),
                 query_count=1
             )
             db.add(log)
@@ -191,5 +199,5 @@ class TestAddressQueryRateLimit:
         # 检查限频（边界情况，应拒绝）
         can_query, remaining = AddressQueryHandler._check_rate_limit(user_id)
         
-        # 由于计算精度，恰好 30 分钟可能被拒绝（剩余 1 分钟）
+        # 由于计算精度，恰好 1 分钟可能被拒绝（剩余 0 分钟）
         assert can_query is False or remaining == 0

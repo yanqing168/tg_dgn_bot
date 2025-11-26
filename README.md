@@ -1,577 +1,357 @@
-# TG DGN Bot - Telegram 支付与会员系统
+# TG DGN Bot - Telegram 多功能数字服务平台 🚀
 
-[![CI](https://github.com/Jack123-UU/tg_dgn_bot/actions/workflows/ci.yml/badge.svg)](https://github.com/Jack123-UU/tg_dgn_bot/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Bot Status](https://img.shields.io/badge/status-active-success.svg)]()
+[![API](https://img.shields.io/badge/API-REST-green.svg)](http://localhost:8001/api/docs)
+[![Architecture](https://img.shields.io/badge/Architecture-V2-blue.svg)](docs/NEW_ARCHITECTURE.md)
 
 ## 📖 项目简介
 
-完整的 Telegram Bot 数字服务平台，提供 Premium 会员直充、USDT 余额管理、地址查询等功能。
+一个功能完善的 Telegram Bot 数字服务平台，提供多种数字资产交易、会员服务、能量兑换等功能。支持 USDT-TRC20 支付，具备完整的管理后台和自动化交付系统。
 
 ### ✨ 核心特性
 
-- 🔐 **TRC20 USDT 支付系统** - 固定地址 + 0.001-0.999 唯一后缀
-- 💎 **Premium 会员直充** - 自动交付 Telegram Premium
-- 💰 **余额管理系统** - 充值、扣费、记录查询
-- 🔍 **地址查询功能** - 波场地址验证 + 30分钟限频（免费）
-- ⚡ **能量服务** - 时长能量（闪租）、笔数套餐、闪兑（TRX/USDT 直转）
-- 🎯 **模块化架构** - 清晰的代码组织和扩展性
+- 🔐 **USDT-TRC20 支付系统** - 固定地址 + 0.001-0.999 唯一后缀识别
+- 💎 **Premium 会员直充** - 支持 3/6/12 个月套餐，自动交付
+- ⚡ **能量兑换服务** - 时长能量、笔数套餐、USDT/TRX 闪兑
+- 🔄 **TRX 闪兑服务** - 实时汇率，快速兑换
+- 👤 **个人中心系统** - 余额管理、充值提现、交易记录
+- 🔍 **地址查询功能** - 波场地址验证，智能限频（可配置）
+- 💵 **实时 USDT 汇率** - 多渠道报价（银行卡/支付宝/微信）
+- 🎁 **免费克隆服务** - 一键克隆 Bot 功能
+- 👨‍💼 **管理员面板** - 价格配置、内容管理、订单查询
+- 📊 **审计日志系统** - 完整的操作记录和追踪
 
-## ✅ 功能实现状态
+## 🎯 功能模块详情
 
-| 功能 | 状态 | Issue |
-|------|------|-------|
-| TRC20 USDT 支付系统 | ✅ | [#1](https://github.com/Jack123-UU/tg_dgn_bot/issues/1) |
-| Premium 会员直充 | ✅ | [#2](https://github.com/Jack123-UU/tg_dgn_bot/issues/2) |
-| 个人中心余额充值 | ✅ | [#3](https://github.com/Jack123-UU/tg_dgn_bot/issues/3) |
-| 地址查询（免费） | ✅ | [#4](https://github.com/Jack123-UU/tg_dgn_bot/issues/4) |
-| 能量闪租/笔数套餐/闪兑 | ✅ | [#5](https://github.com/Jack123-UU/tg_dgn_bot/issues/5) |
-| 免费克隆 | 🔲 | - |
-| 联系客服 | 🔲 | - |
+### 1. 支付系统
+- **USDT-TRC20**: 波场网络 USDT 收款，自动确认
+- **唯一后缀机制**: 0.001-0.999 后缀池，自动分配和回收
+- **订单管理**: 自动超时处理，状态追踪
+
+### 2. Premium 会员
+- **套餐选择**: 3个月、6个月、12个月
+- **批量收件**: 支持多个收件人，格式灵活
+- **自动交付**: 支付确认后自动发放会员
+
+### 3. 能量服务
+- **时长能量**: 65000/131000 能量，1-20笔
+- **笔数套餐**: 灵活的套餐配置
+- **闪兑服务**: USDT/TRX 直接兑换能量
+
+### 4. TRX 兑换
+- **实时汇率**: 动态价格更新
+- **快速交易**: 支付确认后自动转账
+- **交易追踪**: 完整的交易哈希记录
+
+### 5. 管理后台
+- **价格管理**: Premium、能量、TRX 汇率配置
+- **内容管理**: 欢迎消息、帮助文档等
+- **订单查询**: 多维度筛选和导出
+- **系统设置**: 超时时间、限频规则等
 
 ## 📁 项目结构
 
 ```
 tg_dgn_bot/
-├── src/
-│   ├── bot.py                      # 🤖 Bot 主程序入口
-│   ├── menu/                       # 主菜单模块
-│   │   └── main_menu.py            # /start 命令和主菜单
-│   ├── payments/                   # 支付模块（Issue #1）
-│   │   ├── suffix_manager.py       # 后缀管理器 (0.001-0.999池)
-│   │   ├── amount_calculator.py    # 金额计算器 (整数化精度)
-│   │   └── order.py                # 订单状态管理
-│   ├── premium/                    # Premium 模块（Issue #2）
-│   │   ├── handler.py              # 对话处理器
-│   │   ├── recipient_parser.py     # 收件人解析器
-│   │   └── delivery.py             # 交付服务
-│   ├── wallet/                     # 钱包模块（Issue #3）
-│   │   ├── wallet_manager.py       # 余额管理器
-│   │   └── profile_handler.py      # 个人中心处理器
-│   ├── address_query/              # 地址查询模块（Issue #4）
-│   │   ├── validator.py            # 地址验证器
-│   │   ├── explorer.py             # 浏览器链接生成
-│   │   └── handler.py              # 查询处理器
-│   ├── energy/                     # 能量兑换模块（Issue #5）
-│   │   ├── handler_direct.py       # 直转模式处理器
-│   │   ├── client.py               # API客户端 (trxno.com)
-│   │   ├── manager.py              # 订单管理器
-│   │   ├── handler.py              # 对话处理器（旧版）
-│   │   └── models.py               # 数据模型
-│   ├── webhook/                    # Webhook 模块
-│   │   └── trc20_handler.py        # TRC20 回调处理器
-│   ├── config.py                   # 配置管理
-│   ├── database.py                 # 数据库模型（SQLAlchemy）
-│   ├── models.py                   # Pydantic 模型
-│   └── signature.py                # HMAC 签名验证
-├── scripts/                        # 🛠️ 管理脚本
-│   ├── start_bot.sh                # 启动 Bot
-│   ├── stop_bot.sh                 # 停止 Bot
-│   └── validate_config.py          # 配置验证工具
-├── tests/                          # 🧪 测试套件（142 测试）
-│   ├── test_*.py                   # 单元测试
-│   └── conftest.py                 # 测试配置
-├── .env.example                    # 环境变量模板
-├── requirements.txt                # 项目依赖
-└── README.md                       # 本文档
+├── 📂 src/                        # 源代码目录
+│   ├── 🤖 bot.py                  # Bot 主程序入口
+│   ├── ⚙️ config.py               # 配置管理
+│   ├── 💾 database.py             # 数据库模型
+│   ├── 📂 menu/                   # 菜单系统
+│   │   ├── main_menu.py          # 主菜单和 /start
+│   │   └── simple_handlers.py    # 简单功能处理器
+│   ├── 📂 payments/              # 支付系统
+│   │   ├── suffix_manager.py     # 后缀管理器
+│   │   ├── amount_calculator.py  # 金额计算
+│   │   └── order.py              # 订单管理
+│   ├── 📂 premium/               # Premium 会员
+│   │   ├── handler.py           # 会话处理器
+│   │   ├── recipient_parser.py  # 收件人解析
+│   │   └── delivery.py          # 自动交付
+│   ├── 📂 wallet/                # 钱包系统
+│   │   ├── wallet_manager.py    # 余额管理
+│   │   └── profile_handler.py   # 个人中心
+│   ├── 📂 energy/                # 能量服务
+│   │   ├── handler.py           # 能量兑换
+│   │   └── handler_direct.py    # 直转模式
+│   ├── 📂 trx_exchange/          # TRX 兑换
+│   │   └── handler.py           # 兑换处理
+│   ├── 📂 address_query/         # 地址查询
+│   │   ├── handler.py           # 查询处理
+│   │   └── validator.py         # 地址验证
+│   ├── 📂 rates/                 # 汇率服务
+│   │   └── service.py           # OKX 汇率获取
+│   ├── 📂 bot_admin/             # 管理后台
+│   │   ├── handler.py           # 管理面板
+│   │   ├── config_manager.py    # 配置管理
+│   │   └── audit_log.py         # 审计日志
+│   ├── 📂 orders/                # 订单管理
+│   │   └── query_handler.py     # 订单查询
+│   ├── 📂 help/                  # 帮助系统
+│   │   └── handler.py           # 帮助文档
+│   └── 📂 common/                # 公共组件
+│       ├── decorators.py        # 装饰器
+│       └── content_helper.py    # 内容管理
+│
+├── 📂 tests/                     # 测试套件
+│   ├── test_*.py                # 单元测试
+│   └── conftest.py             # 测试配置
+│
+├── 📂 scripts/                   # 实用脚本
+│   ├── start_bot.sh            # 启动脚本
+│   ├── stop_bot.sh             # 停止脚本
+│   ├── backup_dbs.py           # 数据库备份
+│   └── validate_config.py      # 配置验证
+│
+├── 📂 docs/                      # 文档目录
+│   ├── QUICK_START.md          # 快速开始
+│   ├── DEPLOYMENT.md           # 部署指南
+│   ├── ADMIN_PANEL_GUIDE.md    # 管理指南
+│   └── ARCHITECTURE.md         # 架构说明
+│
+├── 📄 requirements.txt          # Python 依赖
+├── 📄 .env.example             # 环境变量示例
+├── 📄 docker-compose.yml       # Docker 编排
+├── 📄 Dockerfile               # Docker 镜像
+└── 💾 tg_bot.db               # SQLite 数据库
+```
+
+## 🆕 V2 新架构特性
+
+### 标准化模块系统
+- **BaseModule**: 所有模块的基类，统一接口
+- **MessageFormatter**: HTML消息格式化，自动转义特殊字符  
+- **ModuleStateManager**: 模块状态管理，隔离各模块数据
+- **ModuleRegistry**: 模块注册中心，动态管理模块
+
+### REST API 接口
+完整的REST API支持，可通过HTTP接口管理Bot：
+
+```bash
+# 健康检查
+GET /api/health
+
+# 模块管理
+GET /api/modules
+PATCH /api/modules/{name}/status
+
+# Premium功能
+POST /api/premium/check-eligibility
+GET /api/premium/packages
+
+# 订单管理
+POST /api/orders
+GET /api/orders/{order_id}
+```
+
+📚 详细API文档：http://localhost:8001/api/docs
+
+### 启动新版本
+
+```bash
+# 启动 Bot V2（包含API服务）
+python -m src.bot_v2
+
+# 或仅启动API服务（用于测试）
+python test_bot_v2.py
 ```
 
 ## 🚀 快速开始
 
 ### 1. 环境要求
 
-- Python 3.11+
-- Redis 7.0+
-- SQLite 3 (或其他 SQLAlchemy 支持的数据库)
+- Python 3.11 或更高版本
+- pip 包管理器
+- SQLite3（内置）
 
-### 2. 配置环境
+### 2. 安装步骤
 
 ```bash
-# 1. 克隆项目
-git clone https://github.com/Jack123-UU/tg_dgn_bot.git
+# 克隆项目
+git clone https://github.com/your-username/tg_dgn_bot.git
 cd tg_dgn_bot
 
-# 2. 安装依赖
+# 安装依赖
 pip install -r requirements.txt
 
-# 3. 配置环境变量
+# 复制环境变量配置
 cp .env.example .env
-vim .env  # 编辑配置
+
+# 编辑 .env 文件，设置必要的配置
+# BOT_TOKEN=your_bot_token_here
+# BOT_OWNER_ID=your_telegram_user_id
+# USDT_TRC20_RECEIVE_ADDR=your_trc20_address
 ```
 
-### 3. 必需配置项
-
-编辑 `.env` 文件：
+### 3. 启动 Bot
 
 ```bash
-# Telegram Bot
-BOT_TOKEN=123456789:ABCdefGHIjklMNOpqrsTUVwxyz
+# 启动 V2 版本（推荐）
+python -m src.bot_v2
 
-# USDT TRC20 Payment
-USDT_TRC20_RECEIVE_ADDR=TYourUSDTReceiveAddress  # 波场收款地址
+# 或启动旧版本
+python -m src.bot
 
-# HMAC Signature
-WEBHOOK_SECRET=your_webhook_secret_key            # 签名密钥
+# 或使用脚本
+bash scripts/start_bot.sh
+```
 
-# Redis
+### 4. 初始化配置
+
+```bash
+# 初始化管理员配置
+python scripts/init_admin_config.py
+
+# 初始化内容配置
+python scripts/init_content_configs.py
+```
+
+## 🎮 使用指南
+
+### 用户命令
+
+- `/start` - 显示主菜单
+- `/help` - 查看帮助文档
+- `/profile` - 个人中心
+- `/premium` - Premium 会员购买
+- `/health` - 系统健康检查
+
+### 管理员命令
+
+- `/admin` - 管理面板（仅限 owner）
+- `/orders` - 订单查询（仅限 owner）
+
+### 按钮功能
+
+#### Inline 按钮（主菜单）
+- 💎 开通会员 - Premium 会员购买
+- 👤 个人中心 - 查看余额和交易记录
+- ⚡ 能量兑换 - 能量服务
+- 🔍 地址查询 - 查询波场地址
+- 🎁 免费克隆 - 克隆 Bot 功能
+- 👨‍💼 联系客服 - 客服支持
+
+#### Reply 键盘（底部菜单）
+- 💎 Premium会员 - 会员服务
+- ⚡ 能量兑换 - 能量交易
+- 🔍 地址查询 - 地址验证
+- 👤 个人中心 - 账户管理
+- 🔄 TRX 兑换 - TRX 交易
+- 👨‍💼 联系客服 - 客服支持
+- 💵 实时U价 - USDT 汇率
+- 🎁 免费克隆 - 克隆服务
+
+## 🔧 配置说明
+
+### 环境变量
+
+```env
+# Bot 配置
+BOT_TOKEN=your_telegram_bot_token
+BOT_OWNER_ID=your_telegram_user_id
+
+# 支付配置
+USDT_TRC20_RECEIVE_ADDR=your_trc20_wallet_address
+
+# 数据库配置
+DATABASE_URL=sqlite:///./tg_bot.db
+
+# Redis 配置（可选）
 REDIS_HOST=localhost
 REDIS_PORT=6379
 REDIS_DB=0
 
-# 订单设置
-ORDER_TIMEOUT_MINUTES=30
+# Webhook 配置（可选）
+USE_WEBHOOK=false
+WEBHOOK_URL=https://your-domain.com
 ```
 
-### 4. 验证配置
+### 价格配置
+
+通过管理面板动态配置：
+- Premium 会员价格（3/6/12 个月）
+- 能量价格（时长/套餐）
+- TRX 兑换汇率
+
+## 📊 数据库架构
+
+### 主要数据表
+
+- `users` - 用户信息和余额
+- `orders` - 通用订单表
+- `deposit_orders` - 充值订单
+- `energy_orders` - 能量订单
+- `trx_exchange_orders` - TRX 兑换订单
+- `suffix_allocations` - 后缀分配记录
+- `address_query_logs` - 地址查询限频
+- `audit_logs` - 审计日志
+- `price_configs` - 价格配置
+- `content_configs` - 内容配置
+- `setting_configs` - 系统设置
+
+## 🐳 Docker 部署
 
 ```bash
-python3 scripts/validate_config.py
+# 构建镜像
+docker build -t tg-dgn-bot .
+
+# 使用 docker-compose 启动
+docker-compose up -d
+
+# 查看日志
+docker-compose logs -f
 ```
-
-### 5. 启动 Bot
-
-```bash
-# 方式 1: 使用启动脚本（推荐）
-./scripts/start_bot.sh
-
-# 方式 2: 直接运行
-python3 -m src.bot
-
-# 停止 Bot
-./scripts/stop_bot.sh
-```
-
-## 🎯 Bot 使用指南
-
-### 🎨 按钮布局
-
-Bot 采用双层按钮设计，提供便捷的交互体验：
-
-#### 📱 底部固定键盘（10个按钮）
-```
-┌─────────────────────┬─────────────────────┐
-│ 💎 飞机会员          │ ⚡ 能量兑换          │
-├─────────────────────┼─────────────────────┤
-│ 🔍 地址监听          │ 👤 个人中心          │
-├─────────────────────┼─────────────────────┤
-│ 🔄 TRX 兑换         │ 💎 限时能量          │
-├─────────────────────┼─────────────────────┤
-│ 👨‍💼 联系客服          │ 🌐 实时U价           │
-├─────────────────────┼─────────────────────┤
-│ ⚡ 能量闪租          │ 📱 免费克隆          │
-└─────────────────────┴─────────────────────┘
-```
-
-#### 🎯 欢迎语内联按钮（4个核心功能）
-```
-┌──────────────────────┬──────────────────────┐
-│ 💎 Premium直充        │ ⚡ 能量兑换            │
-├──────────────────────┼──────────────────────┤
-│ 🔍 地址查询           │ 👤 个人中心            │
-└──────────────────────┴──────────────────────┘
-```
-
-> **设计理念：**
-> - 底部键盘：持久可见，涵盖所有功能（包括占位功能）
-> - 内联按钮：仅展示4个核心高频功能，减少视觉负担
-> - 充值功能已整合到 "个人中心"，避免冗余
-
-### 用户命令
-
-| 命令 | 说明 |
-|------|------|
-| `/start` | 显示主菜单 |
-| `/help` | 显示帮助信息 |
-| `/premium` | 购买 Premium 会员 |
-| `/profile` | 个人中心（余额管理）|
-| `/cancel` | 取消当前操作 |
-| `/admin` | 🔐 管理员面板（仅 Bot Owner）|
-
-> **管理员功能**：使用 `/admin` 命令访问管理面板，配置价格、查看统计等。详见 [管理面板指南](docs/ADMIN_PANEL_GUIDE.md)。
-
-### 功能流程
-
-#### 💎 Premium 直充
-1. 点击 "Premium直充" 或发送 `/premium`
-2. 选择套餐（3/6/12 个月）
-3. 输入收件人（支持 @username 或 t.me/ 链接）
-4. 确认订单并支付 USDT
-5. 自动交付到收件人账户
-
-#### 💰 余额充值
-1. 点击 "个人中心" 或发送 `/profile`
-2. 选择 "充值 USDT"
-3. 输入充值金额
-4. 转账到指定地址（精确到 3 位小数）
-5. 2-5 分钟自动到账
-
-#### 🔍 地址查询（免费）
-
-1. 点击 "地址查询"
-2. 输入波场地址（T 开头 34 位）
-3. 查看地址信息（余额、交易记录）
-4. 点击按钮访问区块链浏览器
-5. **完全免费**，30 分钟限频
-
-#### ⚡ 能量闪租（TRX 直转）
-
-1. 点击 "能量闪租"
-2. 选择套餐：6.5万能量（3 TRX）或 13.1万能量（6 TRX）
-3. 输入购买笔数（1-20）
-4. 输入接收地址
-5. 转账 **TRX** 到代理地址（整数金额）
-6. **6秒自动到账**，1小时有效
-
-#### 📦 笔数套餐（USDT 直转）
-
-1. 点击 "能量兑换" → 选择 "笔数套餐"
-2. 输入接收地址
-3. 转账 **USDT** 到代理地址（最低 5 USDT）
-4. 弹性扣费：有U扣1笔，无U扣2笔
-5. 每天至少使用一次
-
-#### 🔄 闪兑（USDT 直转）
-
-1. 点击 "能量兑换" → 选择 "闪兑"
-2. 输入接收地址
-3. 转账 **USDT** 到代理地址
-4. USDT 直接兑换能量
-5. 即时到账
-
-详细支付模式说明请参考：[docs/PAYMENT_MODES.md](docs/PAYMENT_MODES.md)
 
 ## 🧪 测试
 
-### 运行测试
-
 ```bash
-# 运行完整测试套件
-python -m pytest tests/ -v
-
-# 跳过 Redis 集成测试（仅核心测试）
-python -m pytest tests/ -m "not redis" -v
+# 运行所有测试
+pytest
 
 # 运行特定模块测试
-python -m pytest tests/test_address_validator.py -v
-python -m pytest tests/test_wallet.py -v
+pytest tests/test_premium_order.py
+
+# 生成覆盖率报告
+pytest --cov=src tests/
 ```
 
-### 测试覆盖
-
-- **总测试数**: 142 个
-  - 80 个核心功能测试（无需 Redis/Database）
-  - 20 个钱包模块测试（SQLite 内存数据库）
-  - 22 个地址查询测试（SQLite 内存数据库）
-  - 20 个 Redis 集成测试
-
-## 🔧 技术栈
-
-| 组件 | 技术 |
-|------|------|
-| 语言 | Python 3.11+ |
-| Bot 框架 | python-telegram-bot v21 |
-| 异步 HTTP | httpx |
-| 配置管理 | Pydantic Settings |
-| 数据库 | SQLAlchemy 2.0 + SQLite |
-| 缓存 | Redis 7.0+ |
-| 测试 | pytest + pytest-asyncio |
-| CI/CD | GitHub Actions |
-
-## 📊 数据库设计
-
-### SQLite 表结构
-
-```sql
--- 用户表
-CREATE TABLE users (
-    user_id INTEGER PRIMARY KEY,
-    username TEXT,
-    balance_micro_usdt INTEGER DEFAULT 0,
-    created_at DATETIME,
-    updated_at DATETIME
-);
-
--- 充值订单表
-CREATE TABLE deposit_orders (
-    order_id TEXT PRIMARY KEY,
-    user_id INTEGER,
-    base_amount REAL,
-    unique_suffix INTEGER,
-    total_amount REAL,
-    amount_micro_usdt INTEGER,
-    status TEXT,  -- PENDING, PAID, EXPIRED
-    tx_hash TEXT,
-    created_at DATETIME,
-    paid_at DATETIME,
-    expires_at DATETIME
-);
-
--- 扣费记录表
-CREATE TABLE debit_records (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER,
-    amount_micro_usdt INTEGER,
-    order_type TEXT,
-    related_order_id TEXT,
-    created_at DATETIME
-);
-
--- 地址查询限频表
-CREATE TABLE address_query_logs (
-    user_id INTEGER PRIMARY KEY,
-    last_query_at DATETIME,
-    query_count INTEGER DEFAULT 1
-);
-```
-
-## 🔐 安全特性
-
-- ✅ **HMAC-SHA256 签名验证** - 防止回调伪造
-- ✅ **订单幂等性保证** - 防止重复支付
-- ✅ **金额整数化计算** - 避免浮点误差
-- ✅ **并发保护** - 余额扣费使用行级锁
-- ✅ **限频机制** - 30 分钟/人查询限制
-- ✅ **自动过期回收** - Redis TTL 管理订单生命周期
-
-**CI/CD：**
-
-- GitHub Actions 自动运行所有 101 个测试
-- 使用真实 Redis 7 服务（docker service）
-- Python 3.11 & 3.12 矩阵测试
-- 自动健康检查和连接等待
-
-## 🔧 API 接口
-
-### 主要端点
-
-- `POST /webhook/trc20` - 处理TRC20支付回调（支持Premium自动交付）
-- `GET /health` - 健康检查
-- `GET /stats` - 获取订单统计信息
-- `POST /test/create-order` - 创建测试订单
-- `POST /test/simulate-payment` - 模拟支付回调
-
-### Telegram Bot 命令
-
-- `/premium` - 开始 Premium 会员购买流程
-- `/order_status <order_id>` - 查询订单状态
-- `/cancel` - 取消当前操作
-
-### 支付回调格式
-
-```json
-{
-  "order_id": "订单ID",
-  "amount": 10.123,
-  "txid": "交易哈希",
-  "timestamp": 1635724800,
-  "signature": "HMAC签名",
-  "order_type": "premium"  // 可选：指定订单类型
-}
-```
-
-## 🚀 使用示例
-
-### Issue #1: 创建支付订单
-
-```python
-from src.payments.order import order_manager
-
-# 创建普通订单
-order = await order_manager.create_order(
-    user_id=123456,
-    base_amount=10.0
-)
-
-print(f"订单ID: {order.order_id}")
-print(f"应付金额: {order.total_amount:.3f} USDT")  # 例如: 10.123 USDT
-```
-
-### Issue #2: Premium 会员购买流程
-
-**1. 用户发起购买**
-
-```
-用户: /premium
-Bot: 显示套餐选择（3/6/12个月）
-```
-
-**2. 选择套餐**
-
-```
-用户: 点击 "3个月 - $10"
-Bot: 请输入收件人用户名
-```
-
-**3. 输入收件人**
-
-```
-用户: @alice
-      @bob
-      t.me/charlie
-Bot: 显示订单确认
-     - 套餐：3个月 Premium
-     - 收件人：3人
-     - 应付：10.123 USDT
-```
-
-**4. 确认支付**
-
-```
-用户: 点击 "确认支付"
-Bot: 订单已创建，请转账至指定地址
-```
-
-**5. 自动交付**
-
-```
-用户支付后 2-5 分钟：
-- 系统检测到支付
-- 自动调用 Premium 交付服务
-- 向收件人发送 Premium 礼物
-- 更新订单状态为 DELIVERED/PARTIAL
-```
-
-### Premium API 示例
-
-```python
-from src.premium.handler import PremiumHandler
-from src.premium.recipient_parser import RecipientParser
-from src.models import OrderType
-
-# 解析收件人
-text = "@alice @bob t.me/charlie"
-recipients = RecipientParser.parse(text)
-# 结果: ['alice', 'bob', 'charlie']
-
-# 创建 Premium 订单
-order = await order_manager.create_order(
-    user_id=123456,
-    base_amount=10.0,
-    order_type=OrderType.PREMIUM,
-    premium_months=3,
-    recipients=['alice', 'bob', 'charlie']
-)
-```
-
-## 💡 核心技术特性
-
-### 1. 唯一后缀管理
-
-- **后缀范围**: 0.001 - 0.999 (999个可用)
-- **并发安全**: Redis 分布式锁确保唯一性
-- **自动过期**: 30分钟TTL自动释放
-- **原子操作**: Lua脚本确保一致性
-
-### 2. 金额精度处理
-
-```python
-# 避免浮点误差的整数化计算
-micro_usdt = int(amount * 1000000)  # 转为微USDT
-```
-
-### 3. 签名安全机制
-
-```python
-# HMAC-SHA256 签名生成
-signature = hmac.new(
-    secret.encode('utf-8'),
-    message.encode('utf-8'),
-    hashlib.sha256
-).hexdigest()
-```
-
-### 4. 幂等更新保障
-
-- 同一订单多次回调仅处理一次
-- 状态转换验证（PENDING→PAID）
-- 原子性状态更新
-
-## 📊 性能指标
-
-- **并发支持**: 300+ 订单同时创建无冲突
-- **响应时间**: < 100ms 订单创建
-- **精度保证**: 6位小数精度（微USDT级别）
-- **可用性**: 999个唯一后缀支持高频交易
-
-## 🧪 测试覆盖
-
-### 单元测试
-
-- 后缀分配/释放机制
-- 金额匹配逻辑（浮点精度）
-- HMAC签名验证
-- 订单状态管理
-- 过期清理机制
-
-### 集成测试
-
-- 端到端支付流程
-- 并发后缀分配
-- 回调处理验证
-- 安全性测试
-
-### 功能验证
-
-```bash
-# 运行完整功能验证
-python verify_functionality.py
-```
-
-## 🔒 安全特性
-
-- **HMAC签名**: 防止回调数据篡改
-- **时间戳验证**: 防止重放攻击
-- **地址格式验证**: 确保波场地址合法性
-- **金额范围检查**: 防止异常金额
-- **幂等性保护**: 防止重复处理
-
-## 📈 扩展性设计
-
-- **微服务架构**: 模块化设计便于扩展
-- **Redis集群**: 支持水平扩展
-- **异步处理**: 支持高并发请求
-- **配置驱动**: 灵活的环境配置
-
-## 🐛 故障排除
-
-### 常见问题
-
-1. **后缀分配失败**
-   - 检查Redis连接状态
-   - 确认是否达到999个并发上限
-
-2. **签名验证失败**
-   - 检查WEBHOOK_SECRET配置
-   - 确认数据格式正确
-
-3. **订单状态异常**
-   - 检查订单是否过期
-   - 确认状态转换逻辑
-
-### 日志调试
-
-```bash
-# 启用详细日志
-export LOG_LEVEL=DEBUG
-python -m src.webhook
-```
+## 📈 监控与日志
+
+- 日志文件：自动输出到控制台
+- 错误追踪：通过装饰器自动捕获
+- 审计日志：记录所有管理操作
+- 健康检查：`/health` 命令
 
 ## 🤝 贡献指南
 
-1. Fork 本仓库
-2. 创建功能分支 (`git checkout -b feature/AmazingFeature`)
-3. 提交修改 (`git commit -m 'Add some AmazingFeature'`)
-4. 推送到分支 (`git push origin feature/AmazingFeature`)
-5. 开启 Pull Request
+欢迎提交 Issue 和 Pull Request！
 
-## 📄 许可证
+1. Fork 项目
+2. 创建功能分支
+3. 提交更改
+4. 推送到分支
+5. 创建 Pull Request
 
-本项目采用 MIT 许可证 - 查看 [LICENSE](LICENSE) 文件了解详情。
+## 📝 许可证
 
-## 📞 支持
+本项目采用 MIT 许可证 - 详见 [LICENSE](LICENSE) 文件
 
-如有问题或建议，请通过以下方式联系：
+## 🙏 致谢
 
-- 创建 Issue
-- 发送邮件至项目维护者
-- 参与讨论
+- [python-telegram-bot](https://github.com/python-telegram-bot/python-telegram-bot)
+- [SQLAlchemy](https://www.sqlalchemy.org/)
+- [APScheduler](https://github.com/agronholm/apscheduler)
+
+## 📞 联系方式
+
+- GitHub Issues: [提交问题](https://github.com/your-username/tg_dgn_bot/issues)
+- Telegram: @your_support_bot
+
+---
+
+**最后更新**: 2025-11-26  
+**版本**: 2.0.0  
+**状态**: 生产就绪 ✅  
+**测试**: 430 passed, 0 failed

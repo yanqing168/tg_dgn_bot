@@ -4,6 +4,7 @@
 定期检查数据库中的 PENDING 订单，自动将超时订单标记为 EXPIRED，
 并释放占用的 Redis 后缀（如果适用）。
 """
+import asyncio
 import logging
 from datetime import datetime, timedelta
 from typing import List, Optional
@@ -11,9 +12,9 @@ from typing import List, Optional
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..config import settings
 from ..database import SessionLocal, Order
 from ..payments.suffix_manager import SuffixManager
+from src.common.settings_service import get_order_timeout_minutes
 
 logger = logging.getLogger(__name__)
 
@@ -24,8 +25,7 @@ class OrderExpiryTask:
     def __init__(self):
         """初始化任务"""
         self.suffix_manager = SuffixManager()
-        self.timeout_minutes = settings.order_timeout_minutes
-        logger.info(f"订单超时处理任务初始化完成（超时时间：{self.timeout_minutes} 分钟）")
+        logger.info("订单超时处理任务初始化完成")
 
     def check_and_expire_orders(self) -> dict:
         """
@@ -40,6 +40,9 @@ class OrderExpiryTask:
                     "errors": int  # 处理错误数
                 }
         """
+        timeout_minutes = get_order_timeout_minutes()
+        logger.info("订单超时检查任务：本次使用超时时间 %s 分钟", timeout_minutes)
+
         session = SessionLocal()
         stats = {
             "checked": 0,
@@ -50,7 +53,7 @@ class OrderExpiryTask:
 
         try:
             # 计算超时时间点
-            timeout_time = datetime.now() - timedelta(minutes=self.timeout_minutes)
+            timeout_time = datetime.now() - timedelta(minutes=timeout_minutes)
             
             # 查询所有超时的 PENDING 订单
             stmt = select(Order).where(
@@ -126,7 +129,9 @@ class OrderExpiryTask:
                 suffix = self._extract_suffix_from_amount(order.amount_usdt)
                 
                 if suffix:
-                    released = self.suffix_manager.release_suffix(order_id, suffix)
+                    released = asyncio.run(
+                        self.suffix_manager.release_suffix(suffix, order_id)
+                    )
                     if released:
                         logger.info(f"释放后缀 {suffix} (订单: {order_id})")
                         stats["suffix_released"] += 1

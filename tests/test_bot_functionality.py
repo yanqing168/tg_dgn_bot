@@ -67,14 +67,14 @@ class BotFunctionalityTester:
         print("="*60)
         
         try:
-            from src.premium.handler import PremiumHandler
+            from src.premium.handler_v2 import PremiumHandlerV2
             from src.payments.order import order_manager
             from src.payments.suffix_manager import suffix_manager
             from src.premium.delivery import PremiumDeliveryService
             
             # 检查处理器初始化
             delivery_service = Mock(spec=PremiumDeliveryService)
-            handler = PremiumHandler(
+            handler = PremiumHandlerV2(
                 order_manager=Mock(),
                 suffix_manager=Mock(),
                 delivery_service=delivery_service,

@@ -5,15 +5,23 @@
 支持 Premium 订单类型
 """
 import asyncio
+import logging
 from typing import Optional, List
 import redis.asyncio as redis
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import json
 from enum import Enum
 
+from sqlalchemy.orm import sessionmaker
+
 from ..models import Order, OrderStatus, OrderType
+from ..database import SessionLocal, Order as DBOrder
 from .suffix_manager import suffix_manager
 from ..config import settings
+from src.common.settings_service import get_order_timeout_minutes
+
+
+logger = logging.getLogger(__name__)
 
 
 class OrderManager:
@@ -37,16 +45,23 @@ class OrderManager:
         if self.redis_client:
             await self.redis_client.close()
     
+    # L2 安全加固：后缀分配最大重试次数
+    MAX_SUFFIX_RETRY = 5
+
     async def create_order(
         self, 
         user_id: int, 
         base_amount: float,
         order_type: OrderType = OrderType.OTHER,
         premium_months: Optional[int] = None,
-        recipients: Optional[List[str]] = None
+        recipients: Optional[List[str]] = None,
+        _retry_count: int = 0
     ) -> Optional[Order]:
         """
         创建新订单
+        
+        L2 安全加固：若后缀分配重试超过 MAX_SUFFIX_RETRY 次，则返回 None。
+        调用方必须检查 None 情况并给用户友好提示。
         
         Args:
             user_id: 用户ID
@@ -54,10 +69,16 @@ class OrderManager:
             order_type: 订单类型
             premium_months: Premium 月数（仅 Premium 订单需要）
             recipients: 收件人列表（仅 Premium 订单需要）
+            _retry_count: 内部重试计数（不要外部传入）
             
         Returns:
-            创建的订单或None（如果创建失败）
+            创建的订单，或 None（后缀分配失败/重试超限时）
         """
+        # L2 安全加固：检查重试次数限制
+        if _retry_count >= self.MAX_SUFFIX_RETRY:
+            logger.error(f"后缀分配重试次数超限 user={user_id}, retries={_retry_count}")
+            return None
+
         await self.connect()
         
         # 分配唯一后缀
@@ -71,6 +92,8 @@ class OrderManager:
         from .amount_calculator import AmountCalculator
         total_amount = AmountCalculator.generate_payment_amount(base_amount, suffix)
         
+        timeout_minutes = get_order_timeout_minutes()
+
         # 创建订单
         order = Order(
             base_amount=base_amount,
@@ -80,31 +103,40 @@ class OrderManager:
             order_type=order_type,
             premium_months=premium_months,
             recipients=recipients,
-            expires_at=datetime.now() + timedelta(minutes=settings.order_timeout_minutes)
+            expires_at=datetime.now() + timedelta(minutes=timeout_minutes)
+        )
+
+        logger.info(
+            "创建订单 %s（类型=%s），超时时间 %s 分钟",
+            order.order_id,
+            order_type.value if isinstance(order_type, OrderType) else order_type,
+            timeout_minutes,
         )
         
         # 更新后缀绑定到真实订单ID
         await suffix_manager.release_suffix(suffix, order_id_temp)
         if not await suffix_manager._reserve_suffix(suffix, order.order_id):
-            # 如果重新绑定失败，说明后缀被占用了，重试
+            # 如果重新绑定失败，说明后缀被占用了，重试（带计数）
             return await self.create_order(
-                user_id, base_amount, order_type, premium_months, recipients
+                user_id, base_amount, order_type, premium_months, recipients,
+                _retry_count=_retry_count + 1
             )
         
         # 保存订单到Redis
-        await self._save_order(order)
+        await self._save_order(order, timeout_minutes=timeout_minutes)
         
         return order
     
-    async def _save_order(self, order: Order) -> bool:
+    async def _save_order(self, order: Order, *, timeout_minutes: Optional[int] = None) -> bool:
         """保存订单到Redis"""
         await self.connect()
+        ttl_minutes = timeout_minutes or get_order_timeout_minutes()
         
         order_key = f"order:{order.order_id}"
         amount_key = f"amount:{order.amount_in_micro_usdt}"
         
         # 序列化订单数据
-        order_data = order.dict()
+        order_data = order.model_dump()
         order_data["created_at"] = order.created_at.isoformat()
         order_data["updated_at"] = order.updated_at.isoformat()
         order_data["expires_at"] = order.expires_at.isoformat()
@@ -115,14 +147,14 @@ class OrderManager:
         pipe.set(
             order_key,
             json.dumps(order_data),
-            ex=settings.order_timeout_minutes * 60 + 300  # 额外5分钟缓冲
+            ex=ttl_minutes * 60 + 300  # 额外5分钟缓冲
         )
         
         # 创建金额到订单ID的映射
         pipe.set(
             amount_key,
             order.order_id,
-            ex=settings.order_timeout_minutes * 60 + 300
+            ex=ttl_minutes * 60 + 300
         )
         
         results = await pipe.execute()
@@ -303,6 +335,42 @@ class OrderManager:
             是否取消成功
         """
         return await self.update_order_status(order_id, OrderStatus.CANCELLED)
+
+
+    async def mark_user_confirmed(
+        self,
+        order_id: str,
+        tx_hash: Optional[str] = None,
+        source: Optional[str] = None,
+    ) -> Optional[DBOrder]:
+        """记录用户提供的转账确认信息并持久化至数据库。"""
+
+        return self._mark_user_confirmed_sync(order_id, tx_hash, source)
+
+    def _mark_user_confirmed_sync(
+        self,
+        order_id: str,
+        tx_hash: Optional[str],
+        source: Optional[str],
+    ) -> Optional[DBOrder]:
+        session_factory = SessionLocal
+        session = session_factory()
+        should_close = isinstance(session_factory, sessionmaker)
+        try:
+            order = session.query(DBOrder).filter(DBOrder.order_id == order_id).one_or_none()
+            if not order:
+                return None
+
+            order.user_tx_hash = tx_hash
+            order.user_confirm_source = source
+            order.user_confirmed_at = datetime.now(timezone.utc)
+
+            session.commit()
+            session.refresh(order)
+            return order
+        finally:
+            if should_close:
+                session.close()
 
 
 # 全局实例

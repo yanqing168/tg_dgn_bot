@@ -2,8 +2,12 @@
 
 import pytest
 from decimal import Decimal
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from unittest.mock import Mock, AsyncMock, patch
+
+from types import SimpleNamespace
+
+from telegram.ext import ConversationHandler
 
 from src.trx_exchange.handler import TRXExchangeHandler
 from src.trx_exchange.rate_manager import RateManager, TRXExchangeRate
@@ -240,6 +244,10 @@ class TestTRXExchangeHandler:
         # Create test DB
         from src.database import SessionLocal
 
+        # 清除 RateManager 缓存，确保 mock 生效
+        RateManager._cached_rate = None
+        RateManager._cache_expires_at = None
+        
         with patch("src.trx_exchange.handler.SessionLocal", return_value=Mock()):
             with patch.object(RateManager, "get_rate", return_value=Decimal("3.05")):
                 # Input amount
@@ -313,7 +321,57 @@ class TestTRXExchangeHandler:
         assert "最高兑换金额为 20,000 USDT" in update.message.reply_text.call_args[0][0]
 
     @pytest.mark.asyncio
-    async def test_input_address_valid(self):
+    async def test_show_payment_sets_expires_at(self, monkeypatch):
+        """Ensure show_payment persists expires_at using configured timeout."""
+        handler = TRXExchangeHandler()
+
+        update = Mock()
+        update.effective_user = Mock()
+        update.effective_user.id = 123456
+        message = Mock()
+        message.reply_text = AsyncMock()
+        message.reply_photo = AsyncMock()
+        update.effective_message = message
+
+        context = SimpleNamespace(
+            user_data={
+                "exchange_usdt_amount": Decimal("10"),
+                "exchange_rate": Decimal("3.05"),
+                "exchange_trx_amount": Decimal("30.500000"),
+                "exchange_recipient_address": "TTestAddress",
+            }
+        )
+
+        class FakeSession:
+            def __init__(self):
+                self.added = None
+
+            def add(self, obj):
+                self.added = obj
+
+            def commit(self):
+                pass
+
+            def close(self):
+                pass
+
+        fake_session = FakeSession()
+        monkeypatch.setattr("src.trx_exchange.handler.SessionLocal", lambda: fake_session)
+        monkeypatch.setattr("src.trx_exchange.handler.get_order_timeout_minutes", lambda: 45)
+        from src.trx_exchange import handler as handler_module
+
+        monkeypatch.setattr(handler_module.settings, "trx_exchange_receive_address", "TRECV")
+        monkeypatch.setattr(handler_module.settings, "trx_exchange_qrcode_file_id", "")
+
+        state = await handler.show_payment(update, context)
+
+        assert state == 3  # CONFIRM_PAYMENT
+        assert fake_session.added is not None
+        delta = fake_session.added.expires_at - fake_session.added.created_at
+        assert delta == timedelta(minutes=45)
+
+    @pytest.mark.asyncio
+    async def test_input_address_valid(self, monkeypatch):
         """Test valid address input."""
         handler = TRXExchangeHandler()
 
@@ -333,20 +391,132 @@ class TestTRXExchangeHandler:
             "exchange_usdt_amount": Decimal("10"),
             "exchange_rate": Decimal("3.05"),
             "exchange_trx_amount": Decimal("30.500000"),
+            "exchange_recipient_address": "TTestAddress",
         }
 
-        # Input address
-        mock_db = Mock()
-        mock_db.add = Mock()
-        mock_db.commit = Mock()
-        mock_db.close = Mock()
-        
-        with patch("src.trx_exchange.handler.SessionLocal", return_value=mock_db):
-            result = await handler.input_address(update, context)
+        class FakeSession:
+            def __init__(self):
+                self.added = None
 
-            # Verify
-            assert result == 3  # CONFIRM_PAYMENT state
-            assert "exchange_recipient_address" in context.user_data
+            def add(self, obj):
+                self.added = obj
+
+            def commit(self):
+                pass
+
+            def close(self):
+                pass
+
+        fake_session = FakeSession()
+        monkeypatch.setattr("src.trx_exchange.handler.SessionLocal", lambda: fake_session)
+        monkeypatch.setattr("src.trx_exchange.handler.get_order_timeout_minutes", lambda: 30)
+        from src.trx_exchange import handler as handler_module
+
+        monkeypatch.setattr(handler_module.settings, "trx_exchange_receive_address", "TRECV")
+        monkeypatch.setattr(handler_module.settings, "trx_exchange_qrcode_file_id", "")
+
+        state = await handler.show_payment(update, context)
+
+        assert state == 3  # CONFIRM_PAYMENT
+        assert fake_session.added is not None
+        delta = fake_session.added.expires_at - fake_session.added.created_at
+        assert delta == timedelta(minutes=30)
+
+    @pytest.mark.asyncio
+    async def test_confirm_payment_rejects_expired_order(self, monkeypatch):
+        handler = TRXExchangeHandler()
+
+        test_user_id = 12345
+        expired_order = SimpleNamespace(
+            status="PENDING",
+            expires_at=datetime.now(timezone.utc) - timedelta(minutes=1),
+            user_id=test_user_id,  # H2 安全加固需要此字段
+        )
+
+        class DummySession:
+            def __init__(self, order):
+                self.order = order
+                self.committed = False
+                self.closed = False
+
+            def query(self, *_args, **_kwargs):
+                return self
+
+            def filter_by(self, **_kwargs):
+                return self
+
+            def first(self):
+                return self.order
+
+            def commit(self):
+                self.committed = True
+
+            def close(self):
+                self.closed = True
+
+        dummy_session = DummySession(expired_order)
+        monkeypatch.setattr("src.trx_exchange.handler.SessionLocal", lambda: dummy_session)
+
+        query = Mock()
+        query.data = "trx_paid_TRX123"
+        query.edit_message_text = AsyncMock()
+        query.answer = AsyncMock()
+
+        update = Mock()
+        update.callback_query = query
+        update.effective_user = Mock()
+        update.effective_user.id = test_user_id  # 匹配订单 user_id
+
+        context = Mock()
+        context.user_data = {"exchange_order_id": "TRX123"}
+
+        result = await handler.confirm_payment(update, context)
+
+        assert result == ConversationHandler.END
+        assert expired_order.status == "EXPIRED"
+        assert dummy_session.committed is True
+        query.edit_message_text.assert_awaited_with("❌ 订单已过期，请重新发起兑换。")
+        assert context.user_data == {}
+
+    @pytest.mark.asyncio
+    async def test_handle_payment_callback_skips_expired(self, monkeypatch):
+        handler = TRXExchangeHandler()
+
+        expired_order = SimpleNamespace(
+            status="PENDING",
+            expires_at=datetime.now(timezone.utc) - timedelta(minutes=1),
+        )
+
+        class DummySession:
+            def __init__(self, order):
+                self.order = order
+                self.committed = False
+                self.closed = False
+
+            def query(self, *_args, **_kwargs):
+                return self
+
+            def filter_by(self, **_kwargs):
+                return self
+
+            def first(self):
+                return self.order
+
+            def commit(self):
+                self.committed = True
+
+            def close(self):
+                self.closed = True
+
+        dummy_session = DummySession(expired_order)
+        monkeypatch.setattr("src.trx_exchange.handler.SessionLocal", lambda: dummy_session)
+        handler.trx_sender = Mock()
+
+        await handler.handle_payment_callback("TRX999")
+
+        assert expired_order.status == "EXPIRED"
+        assert dummy_session.committed is True
+        handler.trx_sender.send_trx.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_input_address_invalid(self):

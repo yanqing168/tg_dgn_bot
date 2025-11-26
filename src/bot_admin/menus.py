@@ -16,7 +16,6 @@ class AdminMenus:
             [InlineKeyboardButton("📊 统计数据", callback_data="admin_stats")],
             [InlineKeyboardButton("💰 价格配置", callback_data="admin_prices")],
             [InlineKeyboardButton("📝 文案配置", callback_data="admin_content")],
-            [InlineKeyboardButton("📦 订单管理", callback_data="admin_orders")],
             [InlineKeyboardButton("⚙️ 系统设置", callback_data="admin_settings")],
             [InlineKeyboardButton("🚪 退出管理", callback_data="admin_exit")],
         ]
@@ -26,9 +25,9 @@ class AdminMenus:
     def price_menu() -> InlineKeyboardMarkup:
         """价格配置菜单"""
         keyboard = [
-            [InlineKeyboardButton("💎 Premium 价格", callback_data="price_premium")],
-            [InlineKeyboardButton("🔄 TRX 汇率", callback_data="price_trx_rate")],
-            [InlineKeyboardButton("⚡ 能量价格", callback_data="price_energy")],
+            [InlineKeyboardButton("💎 Premium 价格", callback_data="admin_price_premium")],
+            [InlineKeyboardButton("🔄 TRX 汇率", callback_data="admin_price_trx_rate")],
+            [InlineKeyboardButton("⚡ 能量价格", callback_data="admin_price_energy")],
             [InlineKeyboardButton("🔙 返回主菜单", callback_data="admin_main")],
         ]
         return InlineKeyboardMarkup(keyboard)
@@ -37,9 +36,9 @@ class AdminMenus:
     def premium_price_menu() -> InlineKeyboardMarkup:
         """Premium 价格配置菜单"""
         keyboard = [
-            [InlineKeyboardButton("✏️ 3个月", callback_data="premium_edit_3")],
-            [InlineKeyboardButton("✏️ 6个月", callback_data="premium_edit_6")],
-            [InlineKeyboardButton("✏️ 12个月", callback_data="premium_edit_12")],
+            [InlineKeyboardButton("✏️ 3个月", callback_data="admin_premium_edit_3")],
+            [InlineKeyboardButton("✏️ 6个月", callback_data="admin_premium_edit_6")],
+            [InlineKeyboardButton("✏️ 12个月", callback_data="admin_premium_edit_12")],
             [InlineKeyboardButton("🔙 返回", callback_data="admin_prices")],
         ]
         return InlineKeyboardMarkup(keyboard)
@@ -48,9 +47,9 @@ class AdminMenus:
     def energy_price_menu() -> InlineKeyboardMarkup:
         """能量价格配置菜单"""
         keyboard = [
-            [InlineKeyboardButton("✏️ 小能量", callback_data="energy_edit_small")],
-            [InlineKeyboardButton("✏️ 大能量", callback_data="energy_edit_large")],
-            [InlineKeyboardButton("✏️ 笔数套餐", callback_data="energy_edit_package")],
+            [InlineKeyboardButton("✏️ 小能量", callback_data="admin_energy_edit_small")],
+            [InlineKeyboardButton("✏️ 大能量", callback_data="admin_energy_edit_large")],
+            [InlineKeyboardButton("✏️ 笔数套餐", callback_data="admin_energy_edit_package")],
             [InlineKeyboardButton("🔙 返回", callback_data="admin_prices")],
         ]
         return InlineKeyboardMarkup(keyboard)
@@ -59,20 +58,9 @@ class AdminMenus:
     def content_menu() -> InlineKeyboardMarkup:
         """文案配置菜单"""
         keyboard = [
-            [InlineKeyboardButton("👋 欢迎语", callback_data="content_welcome")],
-            [InlineKeyboardButton("🎁 免费克隆", callback_data="content_clone")],
-            [InlineKeyboardButton("👨‍💼 客服联系", callback_data="content_support")],
-            [InlineKeyboardButton("🔙 返回主菜单", callback_data="admin_main")],
-        ]
-        return InlineKeyboardMarkup(keyboard)
-    
-    @staticmethod
-    def orders_menu() -> InlineKeyboardMarkup:
-        """订单管理菜单"""
-        keyboard = [
-            [InlineKeyboardButton("📋 查看订单", callback_data="orders_list")],
-            [InlineKeyboardButton("❌ 取消订单", callback_data="orders_cancel")],
-            [InlineKeyboardButton("💰 手动退款", callback_data="orders_refund")],
+            [InlineKeyboardButton("👋 欢迎语", callback_data="admin_content_welcome")],
+            [InlineKeyboardButton("🎁 免费克隆", callback_data="admin_content_clone")],
+            [InlineKeyboardButton("👨‍💼 客服联系", callback_data="admin_content_support")],
             [InlineKeyboardButton("🔙 返回主菜单", callback_data="admin_main")],
         ]
         return InlineKeyboardMarkup(keyboard)
@@ -81,10 +69,10 @@ class AdminMenus:
     def settings_menu() -> InlineKeyboardMarkup:
         """系统设置菜单"""
         keyboard = [
-            [InlineKeyboardButton("⏰ 订单超时", callback_data="settings_timeout")],
-            [InlineKeyboardButton("🔍 查询限频", callback_data="settings_rate_limit")],
-            [InlineKeyboardButton("🧹 清理缓存", callback_data="settings_clear_cache")],
-            [InlineKeyboardButton("📊 系统状态", callback_data="settings_status")],
+            [InlineKeyboardButton("⏰ 订单超时", callback_data="admin_settings_timeout")],
+            [InlineKeyboardButton("🔍 查询限频", callback_data="admin_settings_rate_limit")],
+            [InlineKeyboardButton("🧹 清理缓存", callback_data="admin_settings_clear_cache")],
+            [InlineKeyboardButton("📊 系统状态", callback_data="admin_settings_status")],
             [InlineKeyboardButton("🔙 返回主菜单", callback_data="admin_main")],
         ]
         return InlineKeyboardMarkup(keyboard)
@@ -94,7 +82,7 @@ class AdminMenus:
         """确认操作菜单"""
         keyboard = [
             [
-                InlineKeyboardButton("✅ 确认", callback_data=f"confirm_{action_data}"),
+                InlineKeyboardButton("✅ 确认", callback_data=f"admin_confirm_{action_data}"),
                 InlineKeyboardButton("❌ 取消", callback_data="admin_main")
             ]
         ]

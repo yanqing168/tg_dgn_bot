@@ -1,13 +1,10 @@
 """TRX Exchange Order Models."""
 
 from datetime import datetime, timezone
-from decimal import Decimal
-from typing import Optional
 
 from sqlalchemy import Column, String, Integer, DECIMAL, DateTime
-from sqlalchemy.orm import declarative_base
 
-Base = declarative_base()
+from ..database import Base
 
 
 class TRXExchangeOrder(Base):
@@ -32,6 +29,7 @@ class TRXExchangeOrder(Base):
     created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
     paid_at = Column(DateTime, nullable=True, comment="Payment Received Time")
     transferred_at = Column(DateTime, nullable=True, comment="TRX Transferred Time")
+    expires_at = Column(DateTime, nullable=True, comment="Order expiration timestamp (UTC)")
 
     def __repr__(self):
         return (

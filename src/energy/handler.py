@@ -13,8 +13,9 @@ from telegram.ext import (
 )
 from loguru import logger
 
-from .manager import EnergyOrderManager
-from .models import EnergyPackage, EnergyOrderType
+# 从 legacy 导入业务逻辑类
+from ..legacy.energy.manager import EnergyOrderManager
+from ..legacy.energy.models import EnergyPackage, EnergyOrderType
 from ..address_query.validator import AddressValidator
 
 
@@ -440,9 +441,22 @@ class EnergyHandler:
             )
             return STATE_INPUT_USDT
     
-    async def cancel(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-        """取消对话"""
-        await update.message.reply_text("❌ 已取消能量兑换")
+    async def _cancel(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        """取消兑换 - 支持message和callback_query"""
+        context.user_data.clear()
+        
+        if update.callback_query:
+            await update.callback_query.answer("已取消")
+            try:
+                await update.callback_query.edit_message_text("❌ 已取消能量兑换")
+            except:
+                await update.effective_message.reply_text("❌ 已取消能量兑换")
+        elif update.message:
+            await update.message.reply_text("❌ 已取消能量兑换")
+        else:
+            if update.effective_message:
+                await update.effective_message.reply_text("❌ 已取消能量兑换")
+        
         return ConversationHandler.END
     
     def get_conversation_handler(self) -> ConversationHandler:

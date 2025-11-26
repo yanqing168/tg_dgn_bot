@@ -94,6 +94,12 @@ health_service = HealthService()
 
 async def health_command(update, context):
     """/health 命令处理器：输出 Redis/DB 状态。"""
+    user = update.effective_user
+    if not user or user.id != settings.bot_owner_id:
+        if update.message:
+            await update.message.reply_text("⛔ 仅机器人拥有者可使用此命令。")
+        return
+
     result = await health_service.check_all()
     status_emoji = "✅" if result['ok'] else "❌"
     text = (

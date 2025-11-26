@@ -33,6 +33,87 @@ ORDER_STATUS_NAMES = {
 }
 
 
+def _format_datetime(value: Optional[datetime]) -> str:
+    """将时间格式化为统一字符串"""
+    return value.strftime("%Y-%m-%d %H:%M:%S") if value else "-"
+
+
+def _format_amount(micro_amount: Optional[int]) -> str:
+    """格式化微 USDT 金额"""
+    if micro_amount is None:
+        return "-"
+    return f"{micro_amount / 1_000_000:.3f} USDT"
+
+
+def _mask_tx_hash(tx_hash: str) -> str:
+    """使用固定前缀/后缀掩码交易哈希"""
+    if not tx_hash or len(tx_hash) <= 10:
+        return tx_hash
+    return f"{tx_hash[:6]}...{tx_hash[-4:]}"
+
+
+def _build_order_detail_text(order: Order) -> str:
+    """构建订单详情文本，供管理员查看"""
+    order_type = ORDER_TYPE_NAMES.get(order.order_type, order.order_type)
+    status = ORDER_STATUS_NAMES.get(order.status, order.status)
+
+    lines = [
+        "📦 **订单详情**",
+        f"🔑 订单号：`{order.order_id}`",
+        f"👤 用户：{order.user_id}",
+        f"📦 类型：{order_type}",
+        f"📊 状态：{status}",
+        f"💵 金额：{_format_amount(getattr(order, 'amount_usdt', None))}",
+    ]
+
+    if getattr(order, "recipient", None):
+        lines.append(f"🎯 目标：{order.recipient}")
+
+    if getattr(order, "premium_months", None):
+        lines.append(f"📅 Premium：{order.premium_months} 个月")
+
+    # 时间线
+    lines.extend([
+        "",
+        "🕒 **时间线**",
+        f"• 创建：{_format_datetime(getattr(order, 'created_at', None))}",
+        f"• 支付：{_format_datetime(getattr(order, 'paid_at', None))}",
+        f"• 交付：{_format_datetime(getattr(order, 'delivered_at', None))}",
+        f"• 过期：{_format_datetime(getattr(order, 'expires_at', None))}",
+    ])
+
+    # 用户确认信息
+    has_user_confirmation = any([
+        getattr(order, "user_confirmed_at", None),
+        getattr(order, "user_confirm_source", None),
+    ])
+    if has_user_confirmation:
+        lines.extend([
+            "",
+            "👤 用户确认",
+        ])
+        if getattr(order, "user_confirm_source", None):
+            lines.append(f"• 来源：{order.user_confirm_source}")
+        if getattr(order, "user_confirmed_at", None):
+            lines.append(f"• 时间：{_format_datetime(order.user_confirmed_at)}")
+
+    if getattr(order, "user_tx_hash", None):
+        lines.extend([
+            "",
+            "🧾 用户填写 TX Hash",
+            f"`{_mask_tx_hash(order.user_tx_hash)}`",
+        ])
+
+    if getattr(order, "tx_hash", None):
+        lines.extend([
+            "",
+            "🔗 系统 TX Hash",
+            f"`{_mask_tx_hash(order.tx_hash)}`",
+        ])
+
+    return "\n".join(lines)
+
+
 def owner_only(func):
     """装饰器：仅 Owner 可访问"""
     async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
@@ -304,7 +385,14 @@ async def filter_by_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """处理回调查询"""
     query = update.callback_query
-    data = query.callback_data
+    
+    # H2 安全加固：管理员权限校验
+    user_id = update.effective_user.id
+    if user_id != settings.bot_owner_id:
+        await query.answer("⛔ 权限不足", show_alert=True)
+        return ConversationHandler.END
+    
+    data = query.data
     
     filters = context.user_data.get('order_filters', {})
     
@@ -382,9 +470,15 @@ def get_orders_handler() -> ConversationHandler:
         entry_points=[CommandHandler("orders", orders_command)],
         states={
             SHOW_ORDERS: [
-                CallbackQueryHandler(handle_callback)
+                CallbackQueryHandler(handle_callback, pattern=r"^orders_")
             ]
         },
-        fallbacks=[CommandHandler("cancel", cancel)],
-        per_message=False
+        fallbacks=[
+            CallbackQueryHandler(handle_callback, pattern=r"^orders_close$"),
+            CommandHandler("cancel", cancel)
+        ],
+        per_chat=True,
+        per_user=True,
+        per_message=False,
+        allow_reentry=True,
     )

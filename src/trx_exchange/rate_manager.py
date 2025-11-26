@@ -6,12 +6,12 @@ from decimal import Decimal
 from typing import Optional
 
 from sqlalchemy import Column, String, DECIMAL, DateTime
-from sqlalchemy.orm import declarative_base, Session
+from sqlalchemy.orm import Session
 
-from ..config import settings
+from .config import TRXExchangeConfig
+from ..database import Base
 
 logger = logging.getLogger(__name__)
-Base = declarative_base()
 
 
 class TRXExchangeRate(Base):
@@ -35,6 +35,12 @@ class RateManager:
     _cached_rate: Optional[Decimal] = None
     _cache_expires_at: Optional[datetime] = None
     _cache_ttl_seconds = 3600  # 1 hour
+    _config: TRXExchangeConfig = TRXExchangeConfig.from_settings()
+
+    @classmethod
+    def configure(cls, config: TRXExchangeConfig) -> None:
+        """Override default configuration (used by handler factory)."""
+        cls._config = config
 
     @classmethod
     def get_rate(cls, db: Session) -> Decimal:
@@ -65,7 +71,7 @@ class RateManager:
             logger.info(f"Loaded TRX rate from DB: {rate} (updated: {rate_config.updated_at})")
         else:
             # Fallback to config default
-            rate = Decimal(str(settings.trx_exchange_default_rate))
+            rate = Decimal(str(cls._config.default_rate))
             logger.warning(f"No rate in DB, using default: {rate}")
 
         # Update cache

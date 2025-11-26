@@ -13,4 +13,18 @@ tg_bot.db
 # logs & backups
 logs/
 bot.log
+*.log
 .env.backup
+
+# 本地数据库和备份
+*.sqlite
+backup_db/
+
+# 本地环境文件（保留 .env.example 和 .env.zeabur.example）
+.env.local
+.env.production
+.env.staging
+
+# 编辑器缓存
+.windsurf/
+.vscode/

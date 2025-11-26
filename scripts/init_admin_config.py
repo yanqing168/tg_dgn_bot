@@ -57,7 +57,10 @@ def main():
     # 系统设置
     logger.info(f"\n⚙️  系统设置：")
     logger.info(f"  订单超时：{config_manager.get_setting('order_timeout_minutes')} 分钟")
-    logger.info(f"  查询限频：{config_manager.get_setting('address_query_rate_limit')} 分钟")
+    logger.info(
+        f"  查询限频：{config_manager.get_setting('address_query_rate_limit')} 分钟"
+        "（默认 1 分钟）"
+    )
     
     logger.info("\n" + "="*50)
     logger.info("✅ 初始化完成！现在可以使用 /admin 命令访问管理面板。")

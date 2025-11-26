@@ -27,7 +27,6 @@ class TestOrderExpiryTask:
     def test_init(self, task):
         """测试初始化"""
         assert task is not None
-        assert task.timeout_minutes == settings.order_timeout_minutes
         assert task.suffix_manager is not None
 
     def test_should_release_suffix(self, task):
@@ -222,19 +221,30 @@ class TestOrderExpiryIntegration:
 
     @pytest.fixture
     def test_db(self):
-        """使用内存数据库测试"""
-        from src.database import Base, engine
-        Base.metadata.create_all(bind=engine)
-        yield
-        Base.metadata.drop_all(bind=engine)
+        """使用独立内存数据库测试"""
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+        from src.database import Base, Order
+        
+        # 创建完全隔离的内存数据库
+        test_engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(bind=test_engine)
+        TestSession = sessionmaker(bind=test_engine)
+        
+        yield TestSession
+        
+        test_engine.dispose()
 
     def test_full_expiry_flow(self, test_db):
         """测试完整的订单过期流程（集成测试）"""
-        from src.database import SessionLocal, Order
+        from src.database import Order
         from src.tasks.order_expiry import OrderExpiryTask
         
+        # 使用测试 session
+        TestSessionLocal = test_db
+        
         # 创建测试订单
-        session = SessionLocal()
+        session = TestSessionLocal()
         try:
             # 创建一个过期的订单
             expired_order = Order(
@@ -266,10 +276,11 @@ class TestOrderExpiryIntegration:
             
             session.commit()
             
-            # 执行超时检查任务
-            task = OrderExpiryTask()
-            with patch.object(task.suffix_manager, 'release_suffix', return_value=True):
-                stats = task.check_and_expire_orders()
+            # 执行超时检查任务，使用测试数据库
+            with patch('src.tasks.order_expiry.SessionLocal', TestSessionLocal):
+                task = OrderExpiryTask()
+                with patch.object(task.suffix_manager, 'release_suffix', return_value=True):
+                    stats = task.check_and_expire_orders()
             
             # 验证结果
             assert stats["checked"] == 1  # 只有1个过期

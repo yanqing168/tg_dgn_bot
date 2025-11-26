@@ -5,7 +5,7 @@
 from enum import Enum
 from typing import Optional
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class EnergyOrderType(str, Enum):
@@ -38,8 +38,7 @@ class EnergyPriceConfig(BaseModel):
     package_min_usdt: float = Field(5.0, description="笔数套餐最低USDT购买金额")
     max_purchases: int = Field(20, description="一次最大购买笔数")
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class EnergyOrder(BaseModel):
@@ -70,8 +69,7 @@ class EnergyOrder(BaseModel):
     created_at: datetime = Field(default_factory=datetime.now, description="创建时间")
     completed_at: Optional[datetime] = Field(None, description="完成时间")
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class APIAccountInfo(BaseModel):
@@ -81,8 +79,7 @@ class APIAccountInfo(BaseModel):
     balance_usdt: float = Field(0.0, description="USDT余额")
     frozen_balance: float = Field(0.0, description="冻结余额")
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class APIPriceQuery(BaseModel):
@@ -91,8 +88,7 @@ class APIPriceQuery(BaseModel):
     energy_131k_price: float = Field(..., description="13.1万能量价格(TRX)")
     package_price: float = Field(..., description="笔数套餐价格(TRX)")
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class APIOrderResponse(BaseModel):
@@ -102,5 +98,4 @@ class APIOrderResponse(BaseModel):
     data: Optional[dict] = Field(None, description="数据")
     order_id: Optional[str] = Field(None, description="订单ID")
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

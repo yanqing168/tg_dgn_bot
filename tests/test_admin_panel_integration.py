@@ -6,32 +6,47 @@
 import pytest
 import sys
 import os
-import tempfile
+from unittest.mock import patch, MagicMock
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
 # 添加项目根目录到路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-# 在导入之前设置测试数据库路径
-if "DATABASE_URL" not in os.environ:
-    test_db = tempfile.NamedTemporaryFile(delete=False, suffix=".db")
-    test_db.close()
-    os.environ["DATABASE_URL"] = f"sqlite:///{test_db.name}"
 
 from src.bot_admin.config_manager import config_manager
 from src.bot_admin.audit_log import audit_logger
 from src.bot_admin.stats_manager import stats_manager
 from src.bot_admin.middleware import get_owner_id, is_owner
-from src.database import init_db
+
+
+@pytest.fixture(scope="class")
+def admin_test_db():
+    """管理面板测试数据库 fixture"""
+    from src.bot_admin.config_manager import Base as ConfigBase
+    from src.bot_admin.audit_log import Base as AuditBase
+    
+    # 创建独立的内存数据库
+    test_engine = create_engine("sqlite:///:memory:")
+    ConfigBase.metadata.create_all(bind=test_engine)
+    AuditBase.metadata.create_all(bind=test_engine)
+    
+    TestSession = sessionmaker(bind=test_engine)
+    
+    yield TestSession
+    
+    test_engine.dispose()
 
 
 class TestAdminPanelIntegration:
     """管理员面板集成测试"""
     
-    @classmethod
-    def setup_class(cls):
-        """测试类初始化"""
-        init_db()
-        config_manager.init_defaults()
+    @pytest.fixture(autouse=True)
+    def setup_admin_db(self, admin_test_db):
+        """每个测试方法自动使用测试数据库"""
+        # Mock config_manager 的 session
+        with patch.object(config_manager, '_get_session', admin_test_db):
+            config_manager.init_defaults()
+            yield
     
     def test_config_manager_read_prices(self):
         """测试价格配置读取"""
@@ -72,7 +87,7 @@ class TestAdminPanelIntegration:
         assert timeout == "30"
         
         rate_limit = config_manager.get_setting("address_query_rate_limit")
-        assert rate_limit == "30"
+        assert rate_limit == "1"
         
         # 修改设置
         success = config_manager.set_setting("order_timeout_minutes", "45", 123456789, "测试修改")

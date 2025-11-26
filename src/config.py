@@ -1,7 +1,7 @@
 """
 配置管理模块
 """
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -10,6 +10,11 @@ class Settings(BaseSettings):
     # Telegram Bot
     bot_token: str
     bot_owner_id: int = 0  # Bot Owner 用户 ID（用于管理面板权限验证）
+    use_webhook: bool = False
+    bot_service_host: str = "0.0.0.0"
+    bot_service_port: int = 8080
+    bot_webhook_url: str = ""
+    bot_instance_name: str = "primary"
     
     # USDT TRC20 支付
     usdt_trc20_receive_addr: str
@@ -32,8 +37,14 @@ class Settings(BaseSettings):
     tron_explorer: str = "tronscan"  # tronscan | oklink
     
     # 地址查询限频（分钟）
-    address_query_rate_limit_minutes: int = 30
-    
+    address_query_rate_limit_minutes: int = 1
+
+    # USDT 汇率看板配置
+    usdt_rates_cache_ttl: int = 3600  # Redis 缓存 TTL（秒）
+    usdt_rate_bank_markup: float = 0.0
+    usdt_rate_alipay_markup: float = 0.001
+    usdt_rate_wechat_markup: float = 0.002
+
     # 能量API配置
     energy_api_username: str = ""
     energy_api_password: str = ""
@@ -84,7 +95,7 @@ class Settings(BaseSettings):
     # url 可选，不填则为 callback_data
     promotion_buttons: str = (
         '[{"text": "💎 开通会员", "callback": "menu_premium"},'
-        '{"text": "💰 查看价格", "callback": "menu_profile"}],'
+        '{"text": "👤 个人中心", "callback": "menu_profile"}],'
         '[{"text": "⚡ 能量兑换", "callback": "menu_energy"},'
         '{"text": "🔍 地址查询", "callback": "menu_address_query"}],'
         '[{"text": "🎁 免费克隆", "callback": "menu_clone"},'
@@ -98,13 +109,19 @@ class Settings(BaseSettings):
     api_base_url: str = "http://localhost:8000"
     api_key: str = ""
     env: str = "dev"
+    
+    # API服务配置
+    api_host: str = "0.0.0.0"
+    api_port: int = 8001
+    api_keys: list = []
     log_level: str = "INFO"
     log_json_format: bool = False
-    database_url: str = "sqlite:///./data/bot.db"
+    database_url: str = "sqlite:///./tg_bot.db"
     
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        case_sensitive=False,
+    )
 
 
 settings = Settings()

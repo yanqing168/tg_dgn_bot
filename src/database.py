@@ -2,7 +2,7 @@
 数据库配置和模型定义
 使用 SQLAlchemy + SQLite
 """
-from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Boolean, Index
+from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Boolean, Index, BigInteger, Text, text
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 from datetime import datetime
 from typing import Optional
@@ -130,6 +130,9 @@ class EnergyOrder(Base):
     
     created_at = Column(DateTime, default=datetime.now, nullable=False)
     completed_at = Column(DateTime, nullable=True)  # 完成时间
+    # TODO: add Alembic migration for new user confirmation columns
+    user_tx_hash = Column(String, nullable=True)
+    user_confirmed_at = Column(DateTime, nullable=True)
     
     # 创建索引
     __table_args__ = (
@@ -162,6 +165,10 @@ class Order(Base):
     
     # 交易信息
     tx_hash = Column(String, nullable=True)  # 区块链交易哈希
+    # TODO: add Alembic migration for new user confirmation columns
+    user_tx_hash = Column(String, nullable=True)
+    user_confirmed_at = Column(DateTime, nullable=True)
+    user_confirm_source = Column(String, nullable=True)
     
     # 时间字段
     created_at = Column(DateTime, default=datetime.now, nullable=False, index=True)
@@ -177,9 +184,43 @@ class Order(Base):
     )
 
 
-def init_db():
-    """初始化数据库（创建所有表）"""
-    Base.metadata.create_all(bind=engine)
+class UserBinding(Base):
+    """用户绑定表 - 存储用户名与user_id的映射"""
+    __tablename__ = "user_bindings"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, nullable=False, unique=True, index=True)
+    username = Column(String(32), nullable=True, unique=True, index=True)
+    nickname = Column(String(255), nullable=True)
+    is_verified = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
+
+
+class PremiumOrder(Base):
+    """Premium 专用订单表"""
+    __tablename__ = "premium_orders"
+    
+    order_id = Column(String(36), primary_key=True)
+    buyer_id = Column(BigInteger, nullable=False, index=True)  # 购买者ID
+    recipient_id = Column(BigInteger, nullable=True)  # 接收者ID
+    recipient_username = Column(String(32), nullable=True)  # 接收者用户名
+    recipient_type = Column(String(10), nullable=False)  # 'self' or 'other'
+    premium_months = Column(Integer, nullable=False)
+    amount_usdt = Column(Float, nullable=False)
+    status = Column(String(20), nullable=False, default='PENDING')
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    paid_at = Column(DateTime, nullable=True)
+    delivered_at = Column(DateTime, nullable=True)
+    expires_at = Column(DateTime, nullable=False)
+    tx_hash = Column(String(100), nullable=True)
+    delivery_result = Column(Text, nullable=True)
+    
+    # 索引
+    __table_args__ = (
+        Index('idx_premium_orders_buyer_status', 'buyer_id', 'status'),
+        Index('idx_premium_orders_recipient', 'recipient_id'),
+    )
 
 
 def get_db() -> Session:
@@ -194,3 +235,82 @@ def get_db() -> Session:
 def close_db(db: Session):
     """关闭数据库会话"""
     db.close()
+
+
+def init_db():
+    """初始化数据库（创建表）"""
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    try:
+        Base.metadata.create_all(bind=engine)
+        logger.info("✅ 数据库表初始化成功")
+    except Exception as e:
+        logger.error(f"数据库初始化失败: {e}")
+        raise
+
+
+def init_db_safe():
+    """安全初始化数据库（生产环境）"""
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    try:
+        # 创建所有表
+        Base.metadata.create_all(bind=engine)
+        logger.info("✅ 数据库表初始化成功")
+        
+        # 验证关键表
+        with engine.connect() as conn:
+            tables_to_check = [
+                'users', 'orders', 'user_bindings', 
+                'premium_orders', 'deposit_orders',
+                'debit_records', 'suffix_allocations',
+                'address_query_logs', 'energy_orders'
+            ]
+            
+            for table in tables_to_check:
+                try:
+                    result = conn.execute(text(f"SELECT 1 FROM {table} LIMIT 1"))
+                    result.fetchone()  # 尝试获取结果
+                    logger.info(f"✅ 表 {table} 验证通过")
+                except Exception as e:
+                    logger.warning(f"⚠️ 表 {table} 不存在或无法访问: {e}")
+                    # 尝试单独创建该表
+                    for model in Base.registry._class_registry.data.values():
+                        if hasattr(model, '__tablename__') and model.__tablename__ == table:
+                            try:
+                                model.__table__.create(bind=engine, checkfirst=True)
+                                logger.info(f"✅ 表 {table} 已创建")
+                            except Exception as create_error:
+                                logger.error(f"❌ 创建表 {table} 失败: {create_error}")
+                                
+    except Exception as e:
+        logger.error(f"数据库初始化失败: {e}")
+        raise
+
+
+def check_database_health() -> bool:
+    """检查数据库健康状态"""
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    try:
+        # 尝试建立连接
+        with engine.connect() as conn:
+            result = conn.execute(text("SELECT 1"))
+            result.fetchone()
+            
+        # 检查关键表
+        db = get_db()
+        try:
+            # 尝试查询用户表
+            db.query(User).first()
+            logger.info("✅ 数据库健康检查通过")
+            return True
+        finally:
+            close_db(db)
+            
+    except Exception as e:
+        logger.error(f"❌ 数据库健康检查失败: {e}")
+        return False

@@ -20,6 +20,12 @@ from .menus import AdminMenus
 from .config_manager import config_manager
 from .audit_log import audit_logger
 from .stats_manager import stats_manager
+from src.common.settings_service import (
+    get_address_cooldown_minutes,
+    get_order_timeout_minutes,
+    set_address_cooldown_minutes,
+    set_order_timeout_minutes,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -83,24 +89,22 @@ class AdminHandler:
             await self._show_price_menu(query)
         elif data == "admin_content":
             await self._show_content_menu(query)
-        elif data == "admin_orders":
-            await self._show_orders_menu(query)
         elif data == "admin_settings":
             await self._show_settings_menu(query)
         elif data == "admin_exit":
             await query.edit_message_text("👋 已退出管理面板")
         
         # 价格配置
-        elif data == "price_premium":
+        elif data == "admin_price_premium":
             await self._show_premium_price(query)
-        elif data == "price_trx_rate":
+        elif data == "admin_price_trx_rate":
             await self._show_trx_rate(query, context)
-        elif data == "price_energy":
+        elif data == "admin_price_energy":
             await self._show_energy_price(query)
         
         # Premium 价格编辑
-        elif data.startswith("premium_edit_"):
-            months = data.split("_")[2]
+        elif data.startswith("admin_premium_edit_"):
+            months = data.split("_")[3]
             context.user_data['editing_premium_months'] = months
             await query.edit_message_text(
                 f"💎 <b>修改 Premium {months}个月价格</b>\n\n"
@@ -113,7 +117,7 @@ class AdminHandler:
             )
         
         # TRX 汇率编辑
-        elif data == "edit_trx_rate":
+        elif data == "admin_edit_trx_rate":
             await query.edit_message_text(
                 "🔄 <b>修改 TRX 兑换汇率</b>\n\n"
                 f"当前汇率：1 USDT = {config_manager.get_price('trx_exchange_rate', 3.05)} TRX\n\n"
@@ -123,8 +127,8 @@ class AdminHandler:
             return EDITING_TRX_RATE
         
         # 能量价格编辑
-        elif data.startswith("energy_edit_"):
-            energy_type = data.split("_")[2]
+        elif data.startswith("admin_energy_edit_"):
+            energy_type = data.split("_")[3]
             context.user_data['editing_energy_type'] = energy_type
             
             type_map = {
@@ -148,26 +152,26 @@ class AdminHandler:
             )
         
         # 文案编辑
-        elif data == "content_welcome":
+        elif data == "admin_content_welcome":
             await self._edit_welcome(query, context)
             return EDITING_WELCOME
-        elif data == "content_clone":
+        elif data == "admin_content_clone":
             await self._edit_clone(query, context)
             return EDITING_CLONE
-        elif data == "content_support":
+        elif data == "admin_content_support":
             await self._edit_support(query, context)
             return EDITING_SUPPORT
         
         # 系统设置
-        elif data == "settings_timeout":
+        elif data == "admin_settings_timeout":
             await self._edit_timeout(query, context)
             return EDITING_TIMEOUT
-        elif data == "settings_rate_limit":
+        elif data == "admin_settings_rate_limit":
             await self._edit_rate_limit(query, context)
             return EDITING_RATE_LIMIT
-        elif data == "settings_clear_cache":
+        elif data == "admin_settings_clear_cache":
             await self._clear_cache(query)
-        elif data == "settings_status":
+        elif data == "admin_settings_status":
             await self._show_system_status(query)
     
     # ==================== 主菜单 ====================
@@ -260,7 +264,7 @@ class AdminHandler:
         rate = config_manager.get_price("trx_exchange_rate", 3.05)
         
         keyboard = [
-            [InlineKeyboardButton("✏️ 修改汇率", callback_data="edit_trx_rate")],
+            [InlineKeyboardButton("✏️ 修改汇率", callback_data="admin_edit_trx_rate")],
             [InlineKeyboardButton("🔙 返回", callback_data="admin_prices")]
         ]
         
@@ -436,17 +440,12 @@ class AdminHandler:
         try:
             new_timeout = int(update.message.text.strip())
             
-            if new_timeout <= 0:
-                await update.message.reply_text("❌ 超时时间必须大于 0，请重新输入：")
+            if not 5 <= new_timeout <= 120:
+                await update.message.reply_text("❌ 超时时间需在 5~120 分钟之间，请重新输入：")
                 return EDITING_TIMEOUT
             
             # 直接保存配置，不创建订单
-            success = config_manager.set_setting(
-                "order_timeout_minutes",
-                str(new_timeout),
-                update.effective_user.id,
-                "订单超时时间（分钟）"
-            )
+            success = set_order_timeout_minutes(new_timeout, update.effective_user.id)
             
             if success:
                 # 记录审计
@@ -478,17 +477,12 @@ class AdminHandler:
         try:
             new_limit = int(update.message.text.strip())
             
-            if new_limit <= 0:
-                await update.message.reply_text("❌ 限频时间必须大于 0，请重新输入：")
+            if not 1 <= new_limit <= 60:
+                await update.message.reply_text("❌ 限频时间需在 1~60 分钟之间，请重新输入：")
                 return EDITING_RATE_LIMIT
             
             # 直接保存配置，不创建订单
-            success = config_manager.set_setting(
-                "address_query_rate_limit",
-                str(new_limit),
-                update.effective_user.id,
-                "地址查询限频时间（分钟）"
-            )
+            success = set_address_cooldown_minutes(new_limit, update.effective_user.id)
             
             if success:
                 # 记录审计
@@ -563,17 +557,6 @@ class AdminHandler:
             parse_mode="HTML"
         )
     
-    # ==================== 订单管理 ====================
-    
-    async def _show_orders_menu(self, query):
-        """显示订单管理菜单"""
-        await query.edit_message_text(
-            "📦 <b>订单管理</b>\n\n"
-            "暂未实现，敬请期待！",
-            reply_markup=self.menus.back_to_main(),
-            parse_mode="HTML"
-        )
-    
     # ==================== 系统设置 ====================
     
     async def _show_settings_menu(self, query):
@@ -587,23 +570,23 @@ class AdminHandler:
     
     async def _edit_timeout(self, query, context):
         """编辑订单超时"""
-        current = config_manager.get_setting("order_timeout_minutes", "30")
+        current = get_order_timeout_minutes()
         
         await query.edit_message_text(
             "⏰ <b>订单超时设置</b>\n\n"
             f"当前设置：{current} 分钟\n\n"
-            "请输入新的超时时间（分钟，例如：45）：",
+            "请输入新的超时时间（5-120 分钟，例如：45）：",
             parse_mode="HTML"
         )
     
     async def _edit_rate_limit(self, query, context):
         """编辑地址查询限频"""
-        current = config_manager.get_setting("address_query_rate_limit", "30")
+        current = get_address_cooldown_minutes()
         
         await query.edit_message_text(
             "🔍 <b>地址查询限频</b>\n\n"
             f"当前设置：{current} 分钟\n\n"
-            "请输入新的限频时间（分钟，例如：60）：",
+            "请输入新的限频时间（1-60 分钟，例如：10）：",
             parse_mode="HTML"
         )
     
@@ -656,7 +639,7 @@ class AdminHandler:
             
             # 检查数据库
             from sqlalchemy import create_engine, text
-            engine = create_engine(os.getenv("DATABASE_URL", "sqlite:///data/bot.db"))
+            engine = create_engine(os.getenv("DATABASE_URL", "sqlite:///./tg_bot.db"))
             with engine.connect() as conn:
                 conn.execute(text("SELECT 1"))
             db_ok = True
@@ -689,7 +672,10 @@ class AdminHandler:
         return ConversationHandler(
             entry_points=[
                 CommandHandler("admin", self.admin_command),
-                CallbackQueryHandler(self.handle_callback)
+                CallbackQueryHandler(
+                    self.handle_callback,
+                    pattern=r"^admin_"  # 所有admin回调都以admin_开头
+                )
             ],
             states={
                 EDITING_PREMIUM_3: [
@@ -750,7 +736,10 @@ class AdminHandler:
             fallbacks=[
                 CommandHandler("cancel", lambda u, c: ConversationHandler.END)
             ],
-            allow_reentry=True
+            allow_reentry=True,
+            per_chat=True,
+            per_user=True,
+            per_message=False,
         )
 
 

@@ -9,8 +9,7 @@ import logging
 from typing import Dict, Optional
 from datetime import datetime
 from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Text
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import declarative_base, sessionmaker, Session
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +58,7 @@ class ConfigManager:
     def __init__(self, db_path: str = None):
         """初始化配置管理器"""
         if db_path is None:
-            db_path = os.getenv("DATABASE_URL", "sqlite:///data/bot.db")
+            db_path = os.getenv("DATABASE_URL", "sqlite:///./tg_bot.db")
         
         # 确保数据库目录存在
         if db_path.startswith("sqlite:///"):
@@ -239,7 +238,7 @@ class ConfigManager:
         
         # 系统设置
         self.set_setting("order_timeout_minutes", "30", 0, "订单超时时间(分钟)")
-        self.set_setting("address_query_rate_limit", "30", 0, "地址查询限频(分钟)")
+        self.set_setting("address_query_rate_limit", "1", 0, "地址查询限频(分钟)")
         
         logger.info("Default configs initialized")
 

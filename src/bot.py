@@ -14,9 +14,9 @@ from telegram.ext import (
 )
 
 from src.config import settings
-from src.database import init_db
-from src.menu import MainMenuHandler
-from src.premium.handler import PremiumHandler
+from src.database import init_db, init_db_safe, check_database_health
+from src.menu.main_menu import MainMenuHandler
+from .premium.handler_v2 import PremiumHandlerV2
 from src.premium.delivery import PremiumDeliveryService
 from src.wallet.profile_handler import ProfileHandler
 from src.wallet.wallet_manager import WalletManager
@@ -27,8 +27,9 @@ from src.payments.order import order_manager
 from src.payments.suffix_manager import suffix_manager
 from src.health import health_command
 from src.bot_admin import admin_handler
+from src.orders.query_handler import get_orders_handler
 from src.tasks.order_expiry import order_expiry_task
-from src.orders import get_orders_handler
+from src.rates.jobs import refresh_usdt_rates_job
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 # 配置日志
@@ -50,12 +51,18 @@ class TelegramBot:
         self.scheduler = None
         
     async def initialize(self):
-        """初始化所有组件"""
-        logger.info("🚀 初始化 Telegram Bot...")
+        """初始化 Bot 及其依赖"""
+        logger.info("🚀 初始化 Bot...")
         
-        # 初始化数据库
-        init_db()
-        logger.info("✅ 数据库初始化完成")
+        # 安全初始化数据库
+        try:
+            init_db_safe()
+            if not check_database_health():
+                logger.warning("⚠️ 数据库健康检查未通过，但继续启动")
+        except Exception as e:
+            logger.error(f"数据库初始化警告: {e}")
+            # 不阻止启动，尝试基础初始化
+            init_db()
         
         # 连接 Redis
         await order_manager.connect()
@@ -69,170 +76,119 @@ class TelegramBot:
         self.wallet_manager = WalletManager()
         logger.info("✅ 钱包管理器初始化完成")
         
-        # 初始化 Premium 处理器
+        # 初始化 Premium 处理器 V2
         delivery_service = PremiumDeliveryService(
             bot=self.app.bot,
             order_manager=order_manager
         )
         
-        self.premium_handler = PremiumHandler(
+        # 获取bot用户名
+        bot_info = await self.app.bot.get_me()
+        bot_username = bot_info.username
+        
+        self.premium_handler = PremiumHandlerV2(
             order_manager=order_manager,
             suffix_manager=suffix_manager,
             delivery_service=delivery_service,
-            receive_address=settings.usdt_trc20_receive_addr
+            receive_address=settings.usdt_trc20_receive_addr,
+            bot_username=bot_username
         )
         
         logger.info("✅ 处理器初始化完成")
-    
+
+    async def _bootstrap_application(self):
+        """初始化并启动应用公共部分"""
+        await self.initialize()
+        self.register_handlers()
+        await self.app.initialize()
+        await self.app.start()
+        await self.setup_bot_commands()
+        self.start_scheduler()
+
     def register_handlers(self):
         """注册所有命令和回调处理器"""
         logger.info("📝 注册处理器...")
         
-        # === 基础命令 ===
-        self.app.add_handler(CommandHandler("start", MainMenuHandler.start_command))
-        self.app.add_handler(CommandHandler("health", health_command))
+        # === 第0组：全局导航处理器（最高优先级） ===
+        from src.common.navigation_manager import NavigationManager
+        self.app.add_handler(
+            CallbackQueryHandler(
+                NavigationManager.handle_navigation,
+                pattern=r'^(back_to_main|nav_back_to_main)$'
+            ),
+            group=0
+        )
+        logger.info("✅ 全局导航处理器已注册（group=0）")
         
-        # === 增强帮助系统 ===
+        # === 第1组：基础命令 ===
+        self.app.add_handler(CommandHandler("start", MainMenuHandler.start_command), group=1)
+        self.app.add_handler(CommandHandler("health", health_command), group=1)
+        
+        # === 第2组：功能模块（ConversationHandlers） ===
+        # 增强帮助系统
         from src.help import get_help_handler
-        self.app.add_handler(get_help_handler())
+        self.app.add_handler(get_help_handler(), group=2)
         logger.info("✅ 帮助系统处理器已注册（分类帮助 + FAQ）")
         
-        # === 管理员面板 ===
-        self.app.add_handler(admin_handler.get_conversation_handler())
-        logger.info("✅ 管理员面板处理器已注册")
+        # 简单功能处理器
+        from src.menu.simple_handlers import get_simple_handlers
+        for handler in get_simple_handlers():
+            self.app.add_handler(handler, group=2)
+        logger.info("✅ 简单功能处理器已注册（联系客服、实时U价、免费克隆）")
         
-        # === 订单查询（管理员专用） ===
-        self.app.add_handler(get_orders_handler())
-        logger.info("✅ 订单查询处理器已注册（管理员专用）")
+        # Premium 会员直充
+        self.app.add_handler(self.premium_handler.get_conversation_handler(), group=2)
+        logger.info("✅ Premium V2 处理器已注册")
         
-        # === 底部键盘按钮处理 ===
-        # 使用 Regex 过滤器匹配特定按钮文字
-        from telegram.ext import filters as tg_filters
-        keyboard_buttons = [
-            "💎 飞机会员",
-            "⚡ 能量兑换",
-            "🔍 地址查询",
-            "👤 个人中心",
-            "🔄 TRX 兑换",
-            "👨‍💼 联系客服",
-            "💵 实时U价",
-            "🎁 免费克隆"
-        ]
-        self.app.add_handler(MessageHandler(
-            tg_filters.Regex(f"^({'|'.join(map(re.escape, keyboard_buttons))})$"),
-            MainMenuHandler.handle_keyboard_button
-        ))
+        # 个人中心
+        from src.wallet.profile_handler import get_profile_handlers
+        for handler in get_profile_handlers():
+            self.app.add_handler(handler, group=2)
         
-        # === Premium 会员直充 ===
-        # 使用 ConversationHandler
-        self.app.add_handler(self.premium_handler.get_conversation_handler())
-        
-        # 从主菜单进入 Premium
-        self.app.add_handler(CallbackQueryHandler(
-            self.premium_handler.start_premium,
-            pattern=r'^menu_premium$'
-        ))
-        
-        # === 个人中心 ===
-        self.app.add_handler(CommandHandler("profile", ProfileHandler.profile_command))
-        
-        # 个人中心回调
+        # 个人中心主菜单入口
         self.app.add_handler(CallbackQueryHandler(
             ProfileHandler.profile_command_callback,
             pattern=r'^menu_profile$'
-        ))
-        self.app.add_handler(CallbackQueryHandler(
-            ProfileHandler.balance_query,
-            pattern=r'^profile_balance$'
-        ))
-        self.app.add_handler(CallbackQueryHandler(
-            ProfileHandler.start_deposit,
-            pattern=r'^profile_deposit$'
-        ))
-        self.app.add_handler(CallbackQueryHandler(
-            ProfileHandler.deposit_history,
-            pattern=r'^profile_history$'
-        ))
-        self.app.add_handler(CallbackQueryHandler(
-            ProfileHandler.back_to_profile,
-            pattern=r'^profile_back$'
-        ))
+        ), group=2)
+        logger.info("✅ 个人中心处理器已注册")
         
-        # 个人中心消息处理（充值金额输入）
-        self.app.add_handler(MessageHandler(
-            filters.TEXT & ~filters.COMMAND,
-            ProfileHandler.receive_deposit_amount
-        ))
+        # 地址查询
+        self.app.add_handler(AddressQueryHandler.get_conversation_handler(), group=2)
+        logger.info("✅ 地址查询处理器已注册")
         
-        # === 地址查询 ===
-        self.app.add_handler(CallbackQueryHandler(
-            AddressQueryHandler.query_address,
-            pattern=r'^menu_address_query$'
-        ))
-        self.app.add_handler(CallbackQueryHandler(
-            AddressQueryHandler.cancel_query,
-            pattern=r'^cancel_query$'
-        ))
-        
-        # 地址查询消息处理（地址输入）
-        self.app.add_handler(MessageHandler(
-            filters.TEXT & ~filters.COMMAND,
-            AddressQueryHandler.handle_address_input
-        ))
-        
-        # === 能量兑换（直转模式） ===
-        # 使用新的直转模式 handler
-        self.app.add_handler(create_energy_direct_handler())
+        # 能量兑换（直转模式）
+        self.app.add_handler(create_energy_direct_handler(), group=2)
         logger.info("✅ 能量兑换处理器已注册（TRX/USDT 直转模式）")
         
-        # === TRX 兑换 ===
+        # TRX 兑换
         trx_exchange_handler = TRXExchangeHandler()
-        self.app.add_handler(trx_exchange_handler.get_handlers())
+        self.app.add_handler(trx_exchange_handler.get_handlers(), group=2)
         logger.info("✅ TRX 兑换处理器已注册")
         
-        # === 即将上线功能 ===
-        self.app.add_handler(CallbackQueryHandler(
-            MainMenuHandler.handle_free_clone,
-            pattern=r'^menu_clone$'
-        ))
+        # === 第10组：管理员功能（较低优先级，避免截获公共回调） ===
+        self.app.add_handler(admin_handler.get_conversation_handler(), group=10)
+        logger.info("✅ 管理员面板处理器已注册（group=10）")
         
-        # === 联系客服 ===
-        self.app.add_handler(CallbackQueryHandler(
-            MainMenuHandler.handle_support,
-            pattern=r'^menu_support$'
-        ))
+        self.app.add_handler(get_orders_handler(), group=10)
+        logger.info("✅ 订单查询处理器已注册（管理员专用，group=10）")
         
-        # === 实时U价 ===
-        self.app.add_handler(CallbackQueryHandler(
-            MainMenuHandler.refresh_usdt_price,
-            pattern=r'^refresh_usdt_price$'
-        ))
+        # === 第100组：备份处理器（兜底） ===
+        self.app.add_handler(
+            CallbackQueryHandler(
+                NavigationManager.handle_fallback_callback,
+                pattern=r'^.*$'
+            ),
+            group=100
+        )
+        logger.info("✅ 备份处理器已注册（group=100）")
         
-        # === 通用回调：返回主菜单 ===
-        self.app.add_handler(CallbackQueryHandler(
-            MainMenuHandler.show_main_menu,
-            pattern=r'^back_to_main$'
-        ))
-        
+        # === 注册完成 ===
         logger.info("✅ 所有处理器注册完成")
     
     async def start_polling(self):
         """启动 Bot (Polling 模式)"""
         logger.info("🤖 启动 Bot (Polling 模式)...")
-        
-        await self.initialize()
-        self.register_handlers()
-        
-        # 启动 Bot
-        await self.app.initialize()
-        await self.app.start()
-        
-        # 设置 Bot 菜单命令
-        await self.setup_bot_commands()
-        
-        # 启动定时任务调度器
-        self.start_scheduler()
-        
+        await self._bootstrap_application()
         await self.app.updater.start_polling(
             allowed_updates=["message", "callback_query"],
             drop_pending_updates=True
@@ -243,6 +199,40 @@ class TelegramBot:
         logger.info("🎯 等待用户消息...")
         
         # 保持运行
+        try:
+            await asyncio.Event().wait()
+        except KeyboardInterrupt:
+            logger.info("⏹️  收到停止信号...")
+        finally:
+            await self.stop()
+    
+    async def start_webhook(self):
+        """启动 Bot (Webhook 模式)"""
+        logger.info(
+            "🤖 启动 Bot (Webhook 模式)... 监听 %s:%s",
+            settings.bot_service_host,
+            settings.bot_service_port,
+        )
+        if not settings.bot_webhook_url:
+            raise ValueError("bot_webhook_url 未配置，无法启动 Webhook 模式")
+        await self._bootstrap_application()
+        await self.app.bot.set_webhook(
+            settings.bot_webhook_url,
+            drop_pending_updates=True,
+            secret_token=settings.webhook_secret,
+        )
+        await self.app.updater.start_webhook(
+            listen=settings.bot_service_host,
+            port=settings.bot_service_port,
+            webhook_url=settings.bot_webhook_url,
+            secret_token=settings.webhook_secret,
+            allowed_updates=["message", "callback_query"],
+        )
+        logger.info(
+            "✅ Webhook 启动成功：实例 %s → %s",
+            settings.bot_instance_name,
+            settings.bot_webhook_url,
+        )
         try:
             await asyncio.Event().wait()
         except KeyboardInterrupt:
@@ -298,6 +288,10 @@ class TelegramBot:
                 replace_existing=True
             )
             
+            # 添加 USDT 汇率刷新任务（每小时执行一次）
+            job_queue = self.app.job_queue
+            job_queue.run_repeating(refresh_usdt_rates_job, interval=3600, first=5, name="usdt_rates_refresh")
+
             # 启动调度器
             self.scheduler.start()
             logger.info("✅ 定时任务调度器已启动（每5分钟检查订单超时）")
@@ -330,7 +324,10 @@ async def main():
     """主函数"""
     bot = TelegramBot()
     try:
-        await bot.start_polling()
+        if settings.use_webhook:
+            await bot.start_webhook()
+        else:
+            await bot.start_polling()
     except Exception as e:
         logger.error(f"❌ Bot 启动失败: {e}")
         raise

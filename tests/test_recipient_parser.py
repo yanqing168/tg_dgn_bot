@@ -16,21 +16,21 @@ class TestRecipientParser:
     
     def test_parse_multiple_usernames(self):
         """测试解析多个用户名"""
-        text = "@alice @bob @charlie"
+        text = "@alice @bobby @charlie"
         result = RecipientParser.parse(text)
-        assert set(result) == {"alice", "bob", "charlie"}
+        assert set(result) == {"alice", "bobby", "charlie"}
     
     def test_parse_tme_links(self):
         """测试解析 t.me 链接"""
-        text = "t.me/alice t.me/bob"
+        text = "t.me/alice t.me/bobby"
         result = RecipientParser.parse(text)
-        assert set(result) == {"alice", "bob"}
+        assert set(result) == {"alice", "bobby"}
     
     def test_parse_mixed_formats(self):
         """测试混合格式"""
-        text = "@alice t.me/bob @charlie"
+        text = "@alice t.me/bobby @charlie"
         result = RecipientParser.parse(text)
-        assert set(result) == {"alice", "bob", "charlie"}
+        assert set(result) == {"alice", "bobby", "charlie"}
     
     def test_deduplicate_usernames(self):
         """测试去重"""
@@ -48,11 +48,11 @@ class TestRecipientParser:
         """测试多行输入"""
         text = """
         @alice
-        @bob
+        @bobby
         t.me/charlie
         """
         result = RecipientParser.parse(text)
-        assert set(result) == {"alice", "bob", "charlie"}
+        assert set(result) == {"alice", "bobby", "charlie"}
     
     def test_validate_username(self):
         """测试用户名验证"""
@@ -90,6 +90,6 @@ class TestRecipientParser:
     
     def test_parse_with_punctuation(self):
         """测试包含标点符号"""
-        text = "Recipients: @alice, @bob, and @charlie!"
+        text = "Recipients: @alice, @bobby, and @charlie!"
         result = RecipientParser.parse(text)
-        assert set(result) == {"alice", "bob", "charlie"}
+        assert set(result) == {"alice", "bobby", "charlie"}

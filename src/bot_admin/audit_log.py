@@ -6,8 +6,7 @@
 import logging
 from datetime import datetime
 from sqlalchemy import create_engine, Column, Integer, String, DateTime, Text
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import declarative_base, sessionmaker
 import os
 
 logger = logging.getLogger(__name__)
@@ -35,7 +34,7 @@ class AuditLogger:
     def __init__(self, db_path: str = None):
         """初始化审计日志"""
         if db_path is None:
-            db_path = os.getenv("DATABASE_URL", "sqlite:///data/bot.db")
+            db_path = os.getenv("DATABASE_URL", "sqlite:///./tg_bot.db")
         
         self.engine = create_engine(db_path)
         Base.metadata.create_all(self.engine)

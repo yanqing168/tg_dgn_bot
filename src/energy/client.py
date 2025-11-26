@@ -97,7 +97,8 @@ class EnergyAPIClient:
         }
         
         try:
-            logger.info(f"API请求: {endpoint}, 数据: {data}")
+            # M2 安全加固：只记录端点，不打印完整请求数据
+            logger.info(f"API请求: {endpoint}")
             
             response = await self._client.post(
                 url,
@@ -107,13 +108,14 @@ class EnergyAPIClient:
             response.raise_for_status()
             
             result = response.json()
-            logger.info(f"API响应: {result}")
+            # M2 安全加固：只记录状态码，不打印完整响应
+            logger.info(f"API响应: code={result.get('code')}, msg={result.get('msg', '')}")
             
             # 检查状态码
             code = result.get("code")
             if code != self.CODE_SUCCESS:
                 msg = result.get("msg", "未知错误")
-                logger.error(f"API错误: code={code}, msg={msg}")
+                logger.warning(f"API业务错误: code={code}, msg={msg}")
                 raise EnergyAPIError(code, msg)
             
             return result

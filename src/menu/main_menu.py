@@ -3,16 +3,37 @@
 """
 import logging
 import json
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from datetime import datetime
+from typing import Optional
+from telegram import (
+    Update,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    ReplyKeyboardMarkup,
+    KeyboardButton,
+)
 from telegram.ext import ContextTypes
 from src.utils.content_helper import get_content
+from ..rates.service import get_or_refresh_rates
 
 logger = logging.getLogger(__name__)
 
 
 class MainMenuHandler:
+    MAX_MERCHANT_ROWS = 10
+    CHANNEL_TITLES = {
+        "all": "✅ 全部渠道报价",
+        "bank": "🏦 银行卡渠道",
+        "alipay": "💴 支付宝渠道",
+        "wechat": "🟢 微信渠道",
+    }
+    CHANNEL_ICONS = {
+        "bank": "🏦",
+        "alipay": "💴",
+        "wechat": "🟢",
+    }
     """主菜单处理器"""
-    
+
     @staticmethod
     def _build_promotion_buttons():
         """构建引流按钮（从配置读取）"""
@@ -64,12 +85,28 @@ class MainMenuHandler:
             ]
     
     @staticmethod
+    def _build_reply_keyboard() -> ReplyKeyboardMarkup:
+        reply_keyboard = [
+            [KeyboardButton("💎 Premium会员"), KeyboardButton("⚡ 能量兑换")],
+            [KeyboardButton("🔍 地址查询"), KeyboardButton("👤 个人中心")],
+            [KeyboardButton("🔄 TRX 兑换"), KeyboardButton("👨‍💼 联系客服")],
+            [KeyboardButton("💵 实时U价"), KeyboardButton("🎁 免费克隆")],
+        ]
+        return ReplyKeyboardMarkup(
+            reply_keyboard,
+            resize_keyboard=True,
+            one_time_keyboard=False,
+        )
+
+    @staticmethod
     async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """处理 /start 命令"""
         from ..config import settings
-        from telegram import ReplyKeyboardMarkup, KeyboardButton
         
         user = update.effective_user
+        
+        # 重置键盘显示标志
+        context.user_data['main_menu_keyboard_shown'] = False
         
         # 从数据库读取欢迎语（支持热更新）
         text = get_content("welcome_message", default=settings.welcome_message)
@@ -80,17 +117,7 @@ class MainMenuHandler:
         inline_markup = InlineKeyboardMarkup(inline_keyboard)
         
         # 构建底部键盘（ReplyKeyboard）- 8个按钮，4x2布局
-        reply_keyboard = [
-            [KeyboardButton("💎 飞机会员"), KeyboardButton("⚡ 能量兑换")],
-            [KeyboardButton("🔍 地址查询"), KeyboardButton("👤 个人中心")],
-            [KeyboardButton("� TRX兑换"), KeyboardButton("👨‍💼 联系客服")],
-            [KeyboardButton("💵 实时U价"), KeyboardButton("🎁 免费克隆")],
-        ]
-        reply_markup = ReplyKeyboardMarkup(
-            reply_keyboard,
-            resize_keyboard=True,
-            one_time_keyboard=False
-        )
+        reply_markup = MainMenuHandler._build_reply_keyboard()
         
         # 先发送带 InlineKeyboard 的消息
         await update.message.reply_text(
@@ -104,26 +131,55 @@ class MainMenuHandler:
             "📱 使用下方按钮快速访问功能：",
             reply_markup=reply_markup
         )
+        context.user_data['main_menu_keyboard_shown'] = True
     
     @staticmethod
     async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """显示主菜单（回调）"""
         from ..config import settings
         
-        query = update.callback_query
-        await query.answer()
-        
+        # 任何返回主菜单的场景都视为输入流程结束，清理地址查询等待状态
+        context.user_data.pop("awaiting_address", None)
+
+        reply_keyboard_markup = MainMenuHandler._build_reply_keyboard()
+        keyboard = MainMenuHandler._build_promotion_buttons()
+        inline_reply_markup = InlineKeyboardMarkup(keyboard)
+
         # 使用配置的欢迎语（简化版）
         text = (
             "🤖 <b>主菜单</b>\n\n"
             "📋 请选择功能："
         )
-        
-        # 构建引流按钮
-        keyboard = MainMenuHandler._build_promotion_buttons()
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        await query.edit_message_text(text, parse_mode="HTML", reply_markup=reply_markup)
+
+        query = update.callback_query
+        if query:
+            await query.answer()
+            try:
+                await query.edit_message_text(text, parse_mode="HTML", reply_markup=inline_reply_markup)
+            except Exception:
+                await query.message.reply_text(text, parse_mode="HTML", reply_markup=inline_reply_markup)
+            
+            # 检查是否已经设置了ReplyKeyboard
+            # 避免重复发送键盘提示消息
+            if not context.user_data.get('main_menu_keyboard_shown'):
+                await query.message.reply_text(
+                    "📱 使用下方按钮快速访问功能：",
+                    reply_markup=reply_keyboard_markup,
+                )
+                context.user_data['main_menu_keyboard_shown'] = True
+        else:
+            message = update.message or update.effective_message
+            if not message:
+                return
+
+            await message.reply_text(text, parse_mode="HTML", reply_markup=inline_reply_markup)
+            # 只在新对话开始时显示键盘
+            if not context.user_data.get('main_menu_keyboard_shown'):
+                await message.reply_text(
+                    "📱 使用下方按钮快速访问功能：",
+                    reply_markup=reply_keyboard_markup,
+                )
+                context.user_data['main_menu_keyboard_shown'] = True
     
     @staticmethod
     async def handle_free_clone(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -200,136 +256,162 @@ class MainMenuHandler:
         await update.message.reply_text(text, parse_mode="HTML", reply_markup=reply_markup)
     
     @staticmethod
-    async def show_usdt_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """显示实时 USDT 汇率（OKX C2C 商家报价）"""
-        from datetime import datetime
-        import httpx
-        
-        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
+    def _format_updated_time(updated_at: str) -> str:
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.get(
-                    "https://www.okx.com/v3/c2c/tradingOrders/books",
-                    params={
-                        "quoteCurrency": "CNY",
-                        "baseCurrency": "USDT",
-                        "side": "sell",
-                        "paymentMethod": "all",
-                        "limit": 10
-                    }
-                )
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    merchants = data.get("data", {}).get("sell", [])[:10]
-                    
-                    if merchants:
-                        text = "📊 <b>实时U价</b>\n\n"
-                        text += "🌐 <b>OTC实时汇率：</b>\n"
-                        text += "来源： 欧易\n\n"
-                        text += "<b>卖出价格</b>\n"
-                        
-                        circle_nums = ["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨", "⑩"]
-                        
-                        for i, merchant in enumerate(merchants):
-                            price = merchant.get("price", "0.00")
-                            name = merchant.get("nickName", "未知商家")
-                            if len(name) > 15:
-                                name = name[:15] + "..."
-                            text += f"{circle_nums[i]} {price} {name}\n"
-                        
-                        text += f"\n⏰ <b>更新时间：</b> {current_time}"
-                    else:
-                        raise Exception("暂无商家报价")
-                else:
-                    raise Exception("API 请求失败")
-        
-        except Exception as e:
-            logger.error(f"获取 USDT 汇率失败: {e}")
-            text = "📊 <b>实时U价</b>\n\n⚠️ 汇率数据暂时不可用\n\n💰 参考价格：7.13 CNY/USDT\n💡 请稍后重试或联系客服"
-        
-        keyboard = [
-            [InlineKeyboardButton("🔄 刷新汇率", callback_data="refresh_usdt_price")],
-            [InlineKeyboardButton("🔙 返回主菜单", callback_data="back_to_main")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text(text, parse_mode="HTML", reply_markup=reply_markup)
+            dt = datetime.fromisoformat(updated_at)
+            return dt.strftime("%Y-%m-%d %H:%M:%S")
+        except Exception:
+            return updated_at
+
     @staticmethod
-    async def refresh_usdt_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """刷新 USDT 汇率（回调处理，OKX C2C 商家报价）"""
-        from datetime import datetime
-        import httpx
-        
-        query = update.callback_query
-        await query.answer("正在刷新汇率...")
-        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.get(
-                    "https://www.okx.com/v3/c2c/tradingOrders/books",
-                    params={
-                        "quoteCurrency": "CNY",
-                        "baseCurrency": "USDT",
-                        "side": "sell",
-                        "paymentMethod": "all",
-                        "limit": 10
-                    }
+    def _build_channel_block(channel_key: str, title: str, rates: dict) -> str:
+        details = rates.get("details", {}).get(channel_key, {})
+        merchants = details.get("merchants", [])
+        lines = []
+
+        if merchants:
+            for merchant in merchants[: MainMenuHandler.MAX_MERCHANT_ROWS]:
+                price = merchant.get("price")
+                name = merchant.get("name", "商家")
+                try:
+                    price_text = f"{float(price):.4f}"
+                except (TypeError, ValueError):
+                    price_text = "-"
+                lines.append(f"💎 <b>{price_text}</b> {name}")
+        else:
+            fallback_price = rates.get(channel_key) or rates.get("base")
+            if fallback_price:
+                lines.append(f"💰 当前最低价：<b>{float(fallback_price):.4f} CNY</b>")
+            lines.append("ℹ️ 暂无更多挂单信息")
+
+        body = "\n".join(lines)
+        return f"{title}\n{body}"
+
+    @staticmethod
+    def _build_all_block(rates: dict) -> str:
+        aggregated = []
+        details = rates.get("details", {})
+        for key in ("bank", "alipay", "wechat"):
+            icon = MainMenuHandler.CHANNEL_ICONS.get(key, "💎")
+            merchants = details.get(key, {}).get("merchants", [])
+            for merchant in merchants:
+                aggregated.append({
+                    "channel": key,
+                    "icon": icon,
+                    "price": merchant.get("price"),
+                    "name": merchant.get("name", "商家"),
+                })
+
+        if not aggregated:
+            fallback = rates.get("base")
+            if fallback:
+                return (
+                    "✅ 全部渠道报价\n"
+                    f"💎 <b>{float(fallback):.4f}</b> 当前最低价\n"
+                    "ℹ️ 暂无挂单详情"
                 )
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    merchants = data.get("data", {}).get("sell", [])[:10]
-                    
-                    if merchants:
-                        text = "📊 <b>实时U价</b>\n\n"
-                        text += "🌐 <b>OTC实时汇率：</b>\n"
-                        text += "来源： 欧易\n\n"
-                        text += "<b>卖出价格</b>\n"
-                        
-                        circle_nums = ["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨", "⑩"]
-                        
-                        for i, merchant in enumerate(merchants):
-                            price = merchant.get("price", "0.00")
-                            name = merchant.get("nickName", "未知商家")
-                            if len(name) > 15:
-                                name = name[:15] + "..."
-                            text += f"{circle_nums[i]} {price} {name}\n"
-                        
-                        text += f"\n⏰ <b>更新时间：</b> {current_time}"
-                    else:
-                        raise Exception("暂无商家报价")
-                else:
-                    raise Exception("API 请求失败")
-        
-        except Exception as e:
-            logger.error(f"获取 USDT 汇率失败: {e}")
-            text = "📊 <b>实时U价</b>\n\n⚠️ 汇率数据暂时不可用\n\n💰 参考价格：7.13 CNY/USDT\n💡 请稍后重试或联系客服"
-        
+            return "✅ 全部渠道报价\nℹ️ 暂无可用报价"
+
+        filtered = sorted(
+            aggregated,
+            key=lambda item: item.get("price") if item.get("price") is not None else float("inf")
+        )[: MainMenuHandler.MAX_MERCHANT_ROWS]
+
+        lines = []
+        for entry in filtered:
+            price = entry.get("price")
+            try:
+                price_text = f"{float(price):.4f}"
+            except (TypeError, ValueError):
+                price_text = "-"
+            lines.append(f"{entry['icon']} <b>{price_text}</b> {entry['name']}")
+
+        return f"{MainMenuHandler.CHANNEL_TITLES['all']}\n" + "\n".join(lines)
+
+    @staticmethod
+    def _build_rates_text(channel: str, rates: dict) -> str:
+        updated_at = rates.get("updated_at", "-")
+        formatted_time = MainMenuHandler._format_updated_time(updated_at)
+        sections = []
+
+        if channel == "all":
+            sections.append(MainMenuHandler._build_all_block(rates))
+        else:
+            sections.append(MainMenuHandler._build_channel_block(channel, MainMenuHandler.CHANNEL_TITLES[channel], rates))
+
+        body = "\n\n".join(sections)
+        return (
+            "📊 实时U价看板\n\n"
+            f"🕒 更新：{formatted_time}\n\n"
+            f"{body}\n\n"
+            "点击下方按钮切换渠道或返回主菜单。"
+        )
+
+    @staticmethod
+    def _build_rates_keyboard() -> InlineKeyboardMarkup:
         keyboard = [
-            [InlineKeyboardButton("🔄 刷新汇率", callback_data="refresh_usdt_price")],
-            [InlineKeyboardButton("🔙 返回主菜单", callback_data="back_to_main")]
+            [
+                InlineKeyboardButton("✅ 全部", callback_data="menu_rates_all"),
+                InlineKeyboardButton("🏦 银行卡", callback_data="menu_rates_bank"),
+            ],
+            [
+                InlineKeyboardButton("💴 支付宝", callback_data="menu_rates_alipay"),
+                InlineKeyboardButton("🟢 微信", callback_data="menu_rates_wechat"),
+            ],
+            [InlineKeyboardButton("❌ 取消", callback_data="back_to_main")],
         ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text(text, parse_mode="HTML", reply_markup=reply_markup)
+        return InlineKeyboardMarkup(keyboard)
+
+    @staticmethod
+    async def show_usdt_rates(update: Update, context: ContextTypes.DEFAULT_TYPE, channel: str = "all"):
+        rates = await get_or_refresh_rates()
+        keyboard = MainMenuHandler._build_rates_keyboard()
+
+        if rates:
+            text = MainMenuHandler._build_rates_text(channel, rates)
+        else:
+            text = (
+                "📊 实时U价看板\n\n"
+                "⚠️ 暂未获取到汇率缓存，已尝试实时刷新失败。\n"
+                "请稍后重试或联系客服。"
+            )
+
+        query = update.callback_query if update.callback_query else None
+
+        if query:
+            await query.answer()
+            await query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
+        else:
+            await update.message.reply_text(text, reply_markup=keyboard, parse_mode="HTML")
+
+    @staticmethod
+    async def show_usdt_rates_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await MainMenuHandler.show_usdt_rates(update, context, "all")
+
+    @staticmethod
+    async def show_usdt_rates_bank(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await MainMenuHandler.show_usdt_rates(update, context, "bank")
+
+    @staticmethod
+    async def show_usdt_rates_alipay(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await MainMenuHandler.show_usdt_rates(update, context, "alipay")
+
+    @staticmethod
+    async def show_usdt_rates_wechat(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await MainMenuHandler.show_usdt_rates(update, context, "wechat")
     @staticmethod
     async def handle_keyboard_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """处理底部键盘按钮"""
         text = update.message.text
         
+        # 清除地址查询等待状态，避免误触发
+        context.user_data.pop('awaiting_address', None)
+        
         # 根据按钮文字路由到对应功能
-        if text == "💎 飞机会员":
-            # 导航到 Premium 购买
-            from ..premium.handler import PremiumHandler
-            await PremiumHandler.show_premium_menu(update, context)
+        # 注意：Premium、能量兑换、TRX 兑换已由各自的 ConversationHandler 处理
+        # 这些按钮不在 keyboard_buttons 列表中，不会触发此 handler
         
-        elif text == "⚡ 能量兑换":
-            # 导航到能量兑换主菜单
-            from ..energy.handler import EnergyHandler
-            await EnergyHandler.show_main_menu(update, context)
-        
-        elif text == "🔍 地址查询":
+        if text == "🔍 地址查询":
             # 导航到地址查询
             from ..address_query.handler import AddressQueryHandler
             await AddressQueryHandler.query_address(update, context)
@@ -338,22 +420,6 @@ class MainMenuHandler:
             # 导航到个人中心
             from ..wallet.profile_handler import ProfileHandler
             await ProfileHandler.profile_command(update, context)
-        
-        elif text == "🔄 TRX 兑换":
-            # TRX兑换功能
-            from ..trx_exchange.handler import TRXExchangeHandler
-            # Start conversation
-            # Note: This will be handled by ConversationHandler, just show menu
-            await update.message.reply_text(
-                "🔄 <b>TRX 闪兑</b>\n\n"
-                "24小时自动兑换，安全快捷！\n\n"
-                "💰 最低兑换：5 USDT\n"
-                "💰 最高兑换：20,000 USDT\n"
-                "⚡ 到账时间：5-10 分钟\n"
-                "🔒 手续费：Bot 承担\n\n"
-                "请输入您要兑换的 USDT 数量：",
-                parse_mode="HTML"
-            )
         
         elif text == "👨‍💼 联系客服":
             # 显示客服联系方式（从数据库读取）
@@ -366,7 +432,7 @@ class MainMenuHandler:
         
         elif text == "💵 实时U价":
             # 显示实时 USDT 汇率
-            await MainMenuHandler.show_usdt_price(update, context)
+            await MainMenuHandler.show_usdt_rates_all(update, context)
         
         elif text == "🎁 免费克隆":
             # 免费克隆功能（从数据库读取文案）
