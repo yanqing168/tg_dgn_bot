@@ -320,11 +320,8 @@ class TelegramBotV2:
             await self.stop()
     
     async def _run_bot(self):
-        """运行Bot（Polling或Webhook）"""
-        if settings.use_webhook:
-            await self._start_webhook()
-        else:
-            await self._start_polling()
+        """运行Bot（纯Polling模式）"""
+        await self._start_polling()
     
     async def _start_polling(self):
         """Polling模式"""
@@ -336,29 +333,6 @@ class TelegramBotV2:
         await self.app.updater.start_polling(
             allowed_updates=["message", "callback_query"],
             drop_pending_updates=True
-        )
-        
-        # 等待停止信号
-        await asyncio.Event().wait()
-    
-    async def _start_webhook(self):
-        """Webhook模式"""
-        # 初始化Application
-        await self.app.initialize()
-        await self.app.start()
-        
-        # 设置webhook
-        await self.app.bot.set_webhook(
-            settings.bot_webhook_url,
-            drop_pending_updates=True,
-            secret_token=settings.webhook_secret,
-        )
-        await self.app.updater.start_webhook(
-            listen=settings.bot_service_host,
-            port=settings.bot_service_port,
-            webhook_url=settings.bot_webhook_url,
-            secret_token=settings.webhook_secret,
-            allowed_updates=["message", "callback_query"],
         )
         
         # 等待停止信号
