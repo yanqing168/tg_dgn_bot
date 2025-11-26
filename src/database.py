@@ -29,7 +29,7 @@ class User(Base):
     __tablename__ = "users"
     
     user_id = Column(Integer, primary_key=True, index=True)
-    username = Column(String, nullable=True)
+    username = Column(String(64), nullable=True)
     balance_micro_usdt = Column(Integer, default=0, nullable=False)  # 微USDT (×10^6)
     created_at = Column(DateTime, default=datetime.now, nullable=False)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
@@ -47,14 +47,14 @@ class DepositOrder(Base):
     """充值订单表"""
     __tablename__ = "deposit_orders"
     
-    order_id = Column(String, primary_key=True, index=True)
+    order_id = Column(String(36), primary_key=True, index=True)
     user_id = Column(Integer, nullable=False, index=True)
     base_amount = Column(Float, nullable=False)  # 基础金额
     unique_suffix = Column(Integer, nullable=False)  # 唯一后缀 (1-999)
     total_amount = Column(Float, nullable=False)  # 总金额
     amount_micro_usdt = Column(Integer, nullable=False)  # 微USDT金额
-    status = Column(String, default="PENDING", nullable=False)  # PENDING, PAID, EXPIRED
-    tx_hash = Column(String, nullable=True)  # 交易哈希
+    status = Column(String(20), default="PENDING", nullable=False)  # PENDING, PAID, EXPIRED
+    tx_hash = Column(String(100), nullable=True)  # 交易哈希
     created_at = Column(DateTime, default=datetime.now, nullable=False)
     paid_at = Column(DateTime, nullable=True)  # 支付时间
     expires_at = Column(DateTime, nullable=False)  # 过期时间
@@ -73,8 +73,8 @@ class DebitRecord(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, nullable=False, index=True)
     amount_micro_usdt = Column(Integer, nullable=False)  # 扣费金额（微USDT）
-    order_type = Column(String, nullable=False)  # 订单类型（premium/energy等）
-    related_order_id = Column(String, nullable=True)  # 关联订单ID
+    order_type = Column(String(32), nullable=False)  # 订单类型（premium/energy等）
+    related_order_id = Column(String(36), nullable=True)  # 关联订单ID
     created_at = Column(DateTime, default=datetime.now, nullable=False)
     
     def get_amount(self) -> float:
@@ -87,7 +87,7 @@ class SuffixAllocation(Base):
     __tablename__ = "suffix_allocations"
     
     suffix = Column(Integer, primary_key=True)  # 1-999
-    order_id = Column(String, nullable=True, index=True)  # 当前分配的订单ID
+    order_id = Column(String(36), nullable=True, index=True)  # 当前分配的订单ID
     allocated_at = Column(DateTime, nullable=True)  # 分配时间
     expires_at = Column(DateTime, nullable=True)  # 过期时间
 
@@ -105,9 +105,9 @@ class EnergyOrder(Base):
     """能量订单表"""
     __tablename__ = "energy_orders"
     
-    order_id = Column(String, primary_key=True, index=True)
+    order_id = Column(String(36), primary_key=True, index=True)
     user_id = Column(Integer, nullable=False, index=True)
-    order_type = Column(String, nullable=False)  # hourly/package/flash
+    order_type = Column(String(20), nullable=False)  # hourly/package/flash
     
     # 时长能量字段
     energy_amount = Column(Integer, nullable=True)  # 能量数量(65000/131000)
@@ -120,18 +120,18 @@ class EnergyOrder(Base):
     usdt_amount = Column(Float, nullable=True)  # USDT金额
     
     # 通用字段
-    receive_address = Column(String, nullable=False)  # 接收地址
+    receive_address = Column(String(64), nullable=False)  # 接收地址
     total_price_trx = Column(Float, nullable=True)  # 总价(TRX)
     total_price_usdt = Column(Float, nullable=True)  # 总价(USDT)
     
-    status = Column(String, default="PENDING", nullable=False)  # PENDING/PROCESSING/COMPLETED/FAILED/EXPIRED
-    api_order_id = Column(String, nullable=True, index=True)  # API订单ID
-    error_message = Column(String, nullable=True)  # 错误信息
+    status = Column(String(20), default="PENDING", nullable=False)  # PENDING/PROCESSING/COMPLETED/FAILED/EXPIRED
+    api_order_id = Column(String(64), nullable=True, index=True)  # API订单ID
+    error_message = Column(String(500), nullable=True)  # 错误信息
     
     created_at = Column(DateTime, default=datetime.now, nullable=False)
     completed_at = Column(DateTime, nullable=True)  # 完成时间
     # TODO: add Alembic migration for new user confirmation columns
-    user_tx_hash = Column(String, nullable=True)
+    user_tx_hash = Column(String(100), nullable=True)
     user_confirmed_at = Column(DateTime, nullable=True)
     
     # 创建索引
@@ -145,9 +145,9 @@ class Order(Base):
     """通用订单表（用于管理后台）"""
     __tablename__ = "orders"
     
-    order_id = Column(String, primary_key=True, index=True)
+    order_id = Column(String(36), primary_key=True, index=True)
     user_id = Column(Integer, nullable=False, index=True)
-    order_type = Column(String, nullable=False)  # premium, deposit, trx_exchange, energy
+    order_type = Column(String(32), nullable=False)  # premium, deposit, trx_exchange, energy
     
     # 金额字段
     base_amount = Column(Integer, nullable=False)  # 基础金额（微USDT）
@@ -155,20 +155,20 @@ class Order(Base):
     amount_usdt = Column(Integer, nullable=False)  # 总金额（微USDT）
     
     # 状态字段
-    status = Column(String, default="PENDING", nullable=False)  # PENDING, PAID, DELIVERED, EXPIRED, CANCELLED
+    status = Column(String(20), default="PENDING", nullable=False)  # PENDING, PAID, DELIVERED, EXPIRED, CANCELLED
     
     # 收件人/目标地址
-    recipient = Column(String, nullable=True)  # Premium收件人 或 TRX地址
+    recipient = Column(String(255), nullable=True)  # Premium收件人 或 TRX地址
     
     # Premium 专用字段
     premium_months = Column(Integer, nullable=True)  # Premium月数（3/6/12）
     
     # 交易信息
-    tx_hash = Column(String, nullable=True)  # 区块链交易哈希
+    tx_hash = Column(String(100), nullable=True)  # 区块链交易哈希
     # TODO: add Alembic migration for new user confirmation columns
-    user_tx_hash = Column(String, nullable=True)
+    user_tx_hash = Column(String(100), nullable=True)
     user_confirmed_at = Column(DateTime, nullable=True)
-    user_confirm_source = Column(String, nullable=True)
+    user_confirm_source = Column(String(32), nullable=True)
     
     # 时间字段
     created_at = Column(DateTime, default=datetime.now, nullable=False, index=True)
