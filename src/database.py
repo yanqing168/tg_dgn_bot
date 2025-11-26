@@ -24,6 +24,11 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 
+def get_engine():
+    """获取数据库引擎（用于 Alembic 迁移）"""
+    return engine
+
+
 class User(Base):
     """用户表"""
     __tablename__ = "users"
