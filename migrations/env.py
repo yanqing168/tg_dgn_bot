@@ -13,7 +13,6 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 # 导入所有模型
 from src.database import Base, get_engine
-from backend.api.models.admin_models import BotMenu, BotSetting, Product
 
 # Alembic Config 对象
 config = context.config
@@ -43,7 +42,7 @@ def run_migrations_offline() -> None:
 def run_migrations_online() -> None:
     """在线模式运行迁移"""
     # 从环境变量获取数据库URL
-    from backend.api.config import settings
+    from src.config import settings
     config.set_main_option("sqlalchemy.url", settings.database_url)
     
     connectable = engine_from_config(
