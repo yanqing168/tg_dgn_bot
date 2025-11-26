@@ -116,7 +116,8 @@ class Settings(BaseSettings):
     api_keys: list = []
     log_level: str = "INFO"
     log_json_format: bool = False
-    database_url: str = "sqlite:///./tg_bot.db"
+    database_url: str = Field(default="sqlite:///./data/bot.db", validation_alias="DATABASE_URL")
+
     
     model_config = SettingsConfigDict(
         env_file=".env",
