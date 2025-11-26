@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     use_webhook: bool = False
     bot_service_host: str = "0.0.0.0"
     bot_service_port: int = 8080
-    bot_webhook_url: str = ""
+    bot_webhook_url: str = Field(default="", validation_alias="BOT_WEBHOOK_URL")
     bot_instance_name: str = "primary"
     
     # USDT TRC20 支付
