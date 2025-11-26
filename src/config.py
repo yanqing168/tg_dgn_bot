@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     redis_host: str = "localhost"
     redis_port: int = 6379
     redis_db: int = 0
+    redis_password: str = ""
     
     # 订单设置
     order_timeout_minutes: int = 30

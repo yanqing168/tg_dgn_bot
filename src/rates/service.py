@@ -38,6 +38,7 @@ async def _get_redis_client() -> Optional[redis.Redis]:
                 host=settings.redis_host,
                 port=settings.redis_port,
                 db=settings.redis_db,
+                password=settings.redis_password or None,
                 decode_responses=True,
             )
         except Exception as exc:  # pragma: no cover - 极端配置错误
