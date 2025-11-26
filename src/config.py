@@ -1,6 +1,7 @@
 """
 配置管理模块
 """
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
