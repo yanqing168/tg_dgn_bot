@@ -18,11 +18,10 @@ Bot 管理员面板是集成在 Telegram Bot 内的配置管理工具，仅限 B
 
 ### 1. 配置 Bot Owner
 
-编辑 `.env` 文件，添加你的 Telegram 用户 ID：
+编辑 `.env` 文件，添加你的 Telegram 用户 ID：7653853628
 
 ```bash
-BOT_OWNER_ID=123456789  # 替换为你的 Telegram 用户 ID
-```
+8296153815:AAEGiQJVqttKfnc3gkRSt3n0Ym9fDRzSz54```
 
 **如何获取你的用户 ID？**
 
